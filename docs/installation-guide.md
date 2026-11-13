@@ -1,13 +1,19 @@
 # Installation instructions
 
-The operational folder must be named `WPD COMPSTAT`. Paths inside it are relative to that folder. The launcher finds the folder by the manifest `WPD-COMPSTAT-INSTALL.json`. It does not store a drive letter.
+The program lives on the thumb drive, in a folder named `WPD COMPSTAT`. It does not get installed onto the Windows Desktop. A desktop shortcut is optional and only starts the copy that stays on the drive.
+
+On the Lexar drive the folder is `L:\WPD COMPSTAT` while Windows has assigned the letter L. If the letter changes, open `Open WPD COMPSTAT.bat` from the folder on the drive. That file uses its own location. It does not contain `L:\`.
 
 ## Folder layout
 
+The portable copy prepared on this machine is `/agent/WPD COMPSTAT`. Copy that entire folder to the Lexar drive. Do not copy it to the Desktop.
+
 ```text
 WPD COMPSTAT/
+  Open WPD COMPSTAT.bat double-click this on the thumb drive
+  program/              Python source used until a Windows executable is built
   Application/          program files, or the source entry until Windows packaging
-  Launcher/             bootstrap and shortcut tools copied onto the drive
+  Launcher/             bootstrap copied onto the drive
   Database/             encrypted database and key store
   Source PDFs/          sealed call-log PDFs
   Imports/              traffic workbooks copied in by an import

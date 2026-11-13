@@ -148,6 +148,13 @@ def test_assignment_completion_is_not_effectiveness(session):
     assert status == "effective"
 
 
+def test_drive_opener_has_no_drive_letter():
+    text = (Path(__file__).resolve().parents[1] / "launcher" / "Open WPD COMPSTAT.bat").read_text(encoding="utf-8")
+    assert "%~dp0" in text
+    assert "L:\\" not in text
+    assert "Desktop" not in text.split("Do not copy", 1)[0]
+
+
 def test_source_child_sees_the_package_root():
     import wpd_compstat
 

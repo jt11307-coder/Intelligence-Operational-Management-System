@@ -60,6 +60,16 @@ def initialize_installation(root: Path, *, docs_dir: Path | None = None, launche
         for item in launcher_dir.iterdir():
             if item.is_file():
                 shutil.copy2(item, paths.launcher / item.name)
+        opener = launcher_dir / "Open WPD COMPSTAT.bat"
+        if opener.is_file():
+            shutil.copy2(opener, root / opener.name)
+    (root / "README.txt").write_text(
+        "This folder is the whole program. Keep it on the thumb drive.\n"
+        "Copy the folder onto the Lexar drive as WPD COMPSTAT, then double-click\n"
+        "Open WPD COMPSTAT.bat from that drive. Do not move the program to the Desktop.\n"
+        "The database, PDFs, reports, and backups stay in this folder.\n",
+        encoding="utf-8",
+    )
     if docs_dir and docs_dir.is_dir():
         for item in docs_dir.glob("*.md"):
             shutil.copy2(item, paths.documentation / item.name)

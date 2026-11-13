@@ -39,6 +39,8 @@ Covered areas: classification polarity and suppression, synthetic import structu
 
 Details: `docs/test-results.md`.
 
+The folder to copy onto the Lexar drive is `/agent/WPD COMPSTAT`. It includes `Open WPD COMPSTAT.bat` and the Windows packages under `program/wheels`. This machine cannot write to `L:`. The running copy on this computer was stopped so the program is not left on the desktop.
+
 ## Remaining work
 
 - Obtain the real Warwick CAD call-log PDF, confirm the field layout, and run parser acceptance. Do not mark that test passed before that check.
