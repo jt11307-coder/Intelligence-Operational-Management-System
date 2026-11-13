@@ -7,7 +7,11 @@
 3. Right-click the zip, choose Extract All, and extract it to `E:\`.
 4. Open the extracted folder and double-click `Open WPD COMPSTAT.bat` at its top level.
 
-The first start needs Python 3.12 from python.org and an internet connection. It creates the program environment in `.venv` inside the extracted folder and takes several minutes. Later starts open directly.
+The first start needs Python 3.12, 3.13, or 3.14 from python.org and an internet connection. Python 3.14 is fine. Python 3.11 and older, and 3.15 and newer, are refused with a message that names the version found. The first start downloads about 200 MB of packages and takes several minutes. Later starts open directly.
+
+The Python packages are installed in `Runtime\py314` (for Python 3.14) inside the data folder, for example `E:\WPD COMPSTAT\Runtime\py314`. They are never installed inside the extracted folder. That folder name is long, and PySide6 has files deep enough to pass the 260-character Windows path limit there. If the data folder itself is too deep, the opener says so before installing anything.
+
+If an install stops part way, for example because the internet dropped or a window was closed, the next start removes the unfinished `Runtime\py3NN` folder and installs again. An environment counts as finished only after every package installed and the program's libraries loaded. A `.venv` folder left inside an extracted folder by an earlier opener is not used and can be deleted with that folder.
 
 The opener finds the program from its own location, so the extracted folder names and the drive letter do not matter. The database, reports, and backups are kept in `WPD COMPSTAT` at the top of the same drive, for example `E:\WPD COMPSTAT`, outside the extracted folder. Deleting the extracted folder for an update keeps the data. If the top of the drive cannot be written, the data folder is created beside the extracted folder and the opener prints its location.
 
@@ -41,6 +45,7 @@ WPD COMPSTAT/
   Documentation/        copies of these manuals
   Working/              decrypted database while the program is open
   Logs/                 local logs
+  Runtime/              Python packages, one folder per Python version; safe to delete
   WPD-COMPSTAT-INSTALL.json
 ```
 
@@ -48,13 +53,15 @@ WPD COMPSTAT/
 
 ## Create an installation from this source tree
 
-On a machine with Python 3.11 or newer:
+On a machine with Python 3.12, 3.13, or 3.14:
 
 The package is imported from `src/`. Set `PYTHONPATH=src` in this tree. It is not installed into the virtual environment by `requirements.txt`.
 
+`requirements.txt` lists every package the program needs, pinned. Install it with `--no-deps`. Without that flag pip also installs the packages that pymupdf declares but this program does not use, such as onnxruntime. `requirements-dev.txt` adds pytest.
+
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install --no-deps --only-binary=:all: -r requirements.txt -r requirements-dev.txt
 PYTHONPATH=src .venv/bin/python - <<'PY'
 from pathlib import Path
 from wpd_compstat.install import initialize_installation

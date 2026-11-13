@@ -11,13 +11,13 @@ The packaged Windows executable has not been built. This tree was developed on L
 3. Extract the zip to `E:\`.
 4. Double-click `Open WPD COMPSTAT.bat` at the top of the extracted folder.
 
-The first start needs Python 3.12 from python.org and an internet connection. Data is kept in `WPD COMPSTAT` at the top of the same drive. See `docs/installation-guide.md`.
+The first start needs Python 3.12, 3.13, or 3.14 from python.org and an internet connection. Data and the Python packages are kept in `WPD COMPSTAT` at the top of the same drive, with the packages in `WPD COMPSTAT\Runtime`. See `docs/installation-guide.md`.
 
 ## Run from source
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install --no-deps --only-binary=:all: -r requirements.txt -r requirements-dev.txt
 PYTHONPATH=src .venv/bin/python -c "from pathlib import Path; from wpd_compstat.install import initialize_installation; initialize_installation(Path('/path/to/drive/WPD COMPSTAT'), docs_dir=Path('docs'), launcher_dir=Path('launcher'))"
 PYTHONPATH=src WPD_COMPSTAT_ALLOW_SOURCE=1 .venv/bin/python -m wpd_compstat --root "/path/to/drive/WPD COMPSTAT"
 ```

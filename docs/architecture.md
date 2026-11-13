@@ -1,6 +1,6 @@
 # Technical architecture
 
-WPD COMPSTAT is a local Python 3.11+ desktop application. The interface is PySide6. The database is SQLite. Files at rest use AES-GCM. Nothing in the running program calls a network API.
+WPD COMPSTAT is a local Python 3.12–3.14 desktop application. The interface is PySide6. The database is SQLite. Files at rest use AES-GCM. Nothing in the running program calls a network API.
 
 ## Process
 
