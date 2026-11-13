@@ -2,7 +2,7 @@
 
 The program lives on the thumb drive, in a folder named `WPD COMPSTAT`. It does not get installed onto the Windows Desktop. A desktop shortcut is optional and only starts the copy that stays on the drive.
 
-On the Lexar drive the folder is `L:\WPD COMPSTAT` while Windows has assigned the letter L. If the letter changes, open `Open WPD COMPSTAT.bat` from the folder on the drive. That file uses its own location. It does not contain `L:\`.
+On this laptop the Lexar drive is `E:`. The folder belongs at `E:\WPD COMPSTAT`. If Windows assigns a different letter later, open `Open WPD COMPSTAT.bat` from the folder on the drive. That file uses its own location and does not contain a drive letter.
 
 ## Folder layout
 
