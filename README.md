@@ -4,6 +4,15 @@ Offline desktop application for Warwick Police Department COMPSTAT. The program 
 
 The packaged Windows executable has not been built. This tree was developed on Linux. Windows packaging files are in `packaging/`. See `docs/limitations-register.md`.
 
+## Start on Windows
+
+1. Download the [wpd-compstat zip](https://github.com/jt11307-coder/Intelligence-Operational-Management-System/archive/refs/heads/wpd-compstat.zip).
+2. Delete any older extracted copy. Keep `E:\WPD COMPSTAT`, which holds the data.
+3. Extract the zip to `E:\`.
+4. Double-click `Open WPD COMPSTAT.bat` at the top of the extracted folder.
+
+The first start needs Python 3.12 from python.org and an internet connection. Data is kept in `WPD COMPSTAT` at the top of the same drive. See `docs/installation-guide.md`.
+
 ## Run from source
 
 ```bash

@@ -1,5 +1,20 @@
 # Installation instructions
 
+## Quick start from the GitHub zip
+
+1. Download https://github.com/jt11307-coder/Intelligence-Operational-Management-System/archive/refs/heads/wpd-compstat.zip
+2. Delete any older extracted copy of that zip. Do not delete `E:\WPD COMPSTAT`, which holds the data.
+3. Right-click the zip, choose Extract All, and extract it to `E:\`.
+4. Open the extracted folder and double-click `Open WPD COMPSTAT.bat` at its top level.
+
+The first start needs Python 3.12 from python.org and an internet connection. It creates the program environment in `.venv` inside the extracted folder and takes several minutes. Later starts open directly.
+
+The opener finds the program from its own location, so the extracted folder names and the drive letter do not matter. The database, reports, and backups are kept in `WPD COMPSTAT` at the top of the same drive, for example `E:\WPD COMPSTAT`, outside the extracted folder. Deleting the extracted folder for an update keeps the data. If the top of the drive cannot be written, the data folder is created beside the extracted folder and the opener prints its location.
+
+The same opener also works from inside `launcher\`, from `E:\WPD COMPSTAT\`, and in the drive layout below. A `launcher\program\.venv` folder left by an earlier opener is not used and can be deleted.
+
+## Drive layout
+
 The program lives on the thumb drive, in a folder named `WPD COMPSTAT`. It does not get installed onto the Windows Desktop. A desktop shortcut is optional and only starts the copy that stays on the drive.
 
 On this laptop the Lexar drive is `E:`. The folder belongs at `E:\WPD COMPSTAT`. If Windows assigns a different letter later, open `Open WPD COMPSTAT.bat` from the folder on the drive. That file uses its own location and does not contain a drive letter.
