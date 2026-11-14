@@ -186,6 +186,7 @@ def stage_validate(session, batch_id: int) -> dict:
         (json.dumps(summary), batch_id),
     )
     session.audit("import_validate", entity_type="batch", entity_id=batch_id)
+    session.touch()
     return summary
 
 
@@ -221,6 +222,7 @@ def stage_commit(session, batch_id: int, *, before_commit=None) -> dict:
         session.audit("import_rollback", entity_type="batch", entity_id=batch_id, result="rolled_back")
         raise
     session.audit("import_commit", entity_type="batch", entity_id=batch_id)
+    session.touch()
     return summary
 
 
@@ -251,7 +253,6 @@ def _apply_payload(session, batch_id: int, payload: dict, rules, codes) -> dict:
     }
     files_out = []
     for file_entry in payload["files"]:
-        session.touch()
         counts["parsing_errors"] += len(file_entry["errors"])
         if not file_entry["recognized"]:
             _exception(
@@ -265,6 +266,7 @@ def _apply_payload(session, batch_id: int, payload: dict, rules, codes) -> dict:
         declared = {"start": file_entry.get("declared_start"), "end": file_entry.get("declared_end")}
         file_new = file_updated = file_duplicates = file_exceptions = 0
         for raw in file_entry["incidents"]:
+            session.touch()
             incident = _incident_from_dict(raw)
             counts["extracted"] += 1
             missing = _missing_fields(incident)
@@ -696,10 +698,10 @@ def _reconcile_preview(session, payload: dict) -> dict:
     """Preview counts without writing incidents."""
     new = updated = duplicates = conflicts = exceptions = extracted = 0
     for file_entry in payload["files"]:
-        session.touch()
         if not file_entry["recognized"]:
             exceptions += 1
         for raw in file_entry["incidents"]:
+            session.touch()
             incident = _incident_from_dict(raw)
             extracted += 1
             key = match_key(incident.cad_number, incident.event_date)

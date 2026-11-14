@@ -293,11 +293,18 @@ def test_long_import_stages_count_as_session_activity(call_log_session, tmp_path
         clock[0] += timedelta(minutes=10)
         return real_parse(pages, profile)
 
+    real_incident = pipeline._incident_from_dict
+
+    def slow_incident(raw):
+        clock[0] += timedelta(minutes=5)
+        return real_incident(raw)
+
     monkeypatch.setattr(pipeline, "parse_pages", slow_parse)
+    monkeypatch.setattr(pipeline, "_incident_from_dict", slow_incident)
     first, second = tmp_path / "first.pdf", tmp_path / "second.pdf"
     _write(first, _pages())
     _write(second, [(1, _header(1, start="01/05/2026", end="01/05/2026") + DAY_ONE)])
-    batch = stage_select(call_log_session, [first, second])
+    batch = stage_select(call_log_session, [second, first])
     stage_extract(call_log_session, batch)
     stage_validate(call_log_session, batch)
     assert stage_commit(call_log_session, batch)["new_incidents"] == 4
