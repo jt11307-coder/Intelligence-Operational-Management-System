@@ -12,6 +12,7 @@ MIGRATION_DIR = Path(__file__).resolve().parent
 MIGRATION_FILES = (
     (1, "001_initial.sql"),
     (2, "002_report_runs.sql"),
+    (3, "003_incident_child_indexes.sql"),
 )
 
 

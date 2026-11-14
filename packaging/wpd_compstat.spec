@@ -13,6 +13,7 @@ a = Analysis(
     datas=[
         ("../src/wpd_compstat/db/001_initial.sql", "wpd_compstat/db"),
         ("../src/wpd_compstat/db/002_report_runs.sql", "wpd_compstat/db"),
+        ("../src/wpd_compstat/db/003_incident_child_indexes.sql", "wpd_compstat/db"),
         ("../docs", "docs"),
     ],
     hiddenimports=hidden,

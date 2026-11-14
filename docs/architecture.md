@@ -25,7 +25,7 @@ Desktop shortcut
 | --- | --- |
 | `src/wpd_compstat/session.py` | Setup, unlock, lockout, idle lock, permissions, close and seal. |
 | `src/wpd_compstat/security/` | scrypt, AES-GCM, role matrix, redaction. |
-| `src/wpd_compstat/db/` | Connection, migrations `001_initial.sql` and `002_report_runs.sql`, seed data with no incidents. |
+| `src/wpd_compstat/db/` | Connection, migrations `001_initial.sql`, `002_report_runs.sql` and `003_incident_child_indexes.sql`, seed data with no incidents. |
 | `src/wpd_compstat/import_engine/` | Profile, PDF extract, parse, merge, four-stage pipeline. |
 | `src/wpd_compstat/classification/` | Starter taxonomy, explainable engine, code mentions, persistence. |
 | `src/wpd_compstat/analysis/` | Metrics, comparisons, time of day, patterns, offline coordinates, traffic, divisions, draft recommendations. |

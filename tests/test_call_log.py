@@ -308,3 +308,11 @@ def test_long_import_stages_count_as_session_activity(call_log_session, tmp_path
     stage_extract(call_log_session, batch)
     stage_validate(call_log_session, batch)
     assert stage_commit(call_log_session, batch)["new_incidents"] == 4
+
+
+def test_duplicate_lookups_use_incident_indexes(session):
+    plans = [
+        " ".join(row[3] for row in session.conn.execute(f"EXPLAIN QUERY PLAN SELECT * FROM {table} WHERE incident_id = 1"))
+        for table in ("vehicles", "sensitive_persons", "citations", "incident_field_history", "incident_conflicts")
+    ]
+    assert all("USING INDEX" in plan for plan in plans), plans
