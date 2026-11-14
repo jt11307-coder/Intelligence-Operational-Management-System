@@ -278,3 +278,26 @@ def test_pipeline_reconciles_and_dedupes_overlapping_call_logs(call_log_session,
         conn.execute("SELECT summary_json FROM import_batches ORDER BY id DESC LIMIT 1").fetchone()["summary_json"]
     )["files"]
     assert files[0]["duplicates_skipped"] == 4
+
+
+def test_long_import_stages_count_as_session_activity(call_log_session, tmp_path, monkeypatch):
+    from datetime import timedelta
+
+    from wpd_compstat.import_engine import pipeline
+
+    clock = [call_log_session.now()]
+    monkeypatch.setattr(call_log_session, "now", lambda: clock[0])
+    real_parse = pipeline.parse_pages
+
+    def slow_parse(pages, profile):
+        clock[0] += timedelta(minutes=10)
+        return real_parse(pages, profile)
+
+    monkeypatch.setattr(pipeline, "parse_pages", slow_parse)
+    first, second = tmp_path / "first.pdf", tmp_path / "second.pdf"
+    _write(first, _pages())
+    _write(second, [(1, _header(1, start="01/05/2026", end="01/05/2026") + DAY_ONE)])
+    batch = stage_select(call_log_session, [first, second])
+    stage_extract(call_log_session, batch)
+    stage_validate(call_log_session, batch)
+    assert stage_commit(call_log_session, batch)["new_incidents"] == 4

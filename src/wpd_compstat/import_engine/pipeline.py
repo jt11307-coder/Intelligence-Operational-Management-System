@@ -56,6 +56,7 @@ def stage_select(session, paths: list[Path], *, ocr: bool = False) -> int:
             raise ValidationError("Only PDF files can be imported.")
         with transaction(session.conn):
             _store_file(session, batch_id, path, ocr)
+        session.touch()
     session.audit("import_select", entity_type="batch", entity_id=batch_id, detail=f"files={len(paths)}")
     return batch_id
 
@@ -161,6 +162,7 @@ def stage_extract(session, batch_id: int) -> dict:
                 (parsed.declared_start, parsed.declared_end, len(pages), file_row["id"]),
             )
         payload["files"].append(entry)
+        session.touch()
     staging = session.paths.imports / "staging" / f"{batch_id}.json.enc"
     seal_file(staging, session.dek, json.dumps(payload).encode("utf-8"))
     session.conn.execute(
@@ -249,6 +251,7 @@ def _apply_payload(session, batch_id: int, payload: dict, rules, codes) -> dict:
     }
     files_out = []
     for file_entry in payload["files"]:
+        session.touch()
         counts["parsing_errors"] += len(file_entry["errors"])
         if not file_entry["recognized"]:
             _exception(
@@ -693,6 +696,7 @@ def _reconcile_preview(session, payload: dict) -> dict:
     """Preview counts without writing incidents."""
     new = updated = duplicates = conflicts = exceptions = extracted = 0
     for file_entry in payload["files"]:
+        session.touch()
         if not file_entry["recognized"]:
             exceptions += 1
         for raw in file_entry["incidents"]:
