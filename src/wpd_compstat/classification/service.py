@@ -382,5 +382,7 @@ def _is_significant(category: str) -> bool:
         "mutual_aid",
         "major_disturbance",
         "public_safety_threat",
+        "overdose",
+        "mental_health",
     }
     return category in significant

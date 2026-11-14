@@ -7,7 +7,12 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 
 from wpd_compstat.classification.taxonomy import RULES
-from wpd_compstat.constants import AGENCY_CODES, DEFAULT_SESSION_MINUTES, PERCENT_MIN_BASELINE
+from wpd_compstat.constants import (
+    AGENCY_CODES,
+    DEFAULT_SESSION_MINUTES,
+    PERCENT_MIN_BASELINE,
+    REPEAT_LOCATION_WINDOW_DAYS,
+)
 from wpd_compstat.import_engine.call_log import CALL_LOG_PROFILE
 from wpd_compstat.import_engine.profile import GENERIC_PROFILE, profile_json
 
@@ -35,6 +40,7 @@ def default_settings() -> dict:
         "violation_weekly_goal": 200,
         "percent_change_min_baseline": PERCENT_MIN_BASELINE,
         "repeat_location_min": 3,
+        "repeat_location_window_days": REPEAT_LOCATION_WINDOW_DAYS,
         "pattern_min_support": 3,
         "source_lists_confirmed": False,
         "officer_initiated_sources": ["OFFICER INITIATED", "OI", "SELF-INITIATED"],

@@ -132,6 +132,20 @@ def test_short_code_matches_only_the_whole_call_type():
         pass
 
 
+def test_overdose_mental_health_and_neighbor_phrases_are_recognized():
+    overdose = _categories(Classifiable(call_type="DRUG OVERDOSE"), confirmed={"overdose"})
+    negated = _categories(
+        Classifiable(call_type="OVERDOSE", narratives=["Not an overdose. The person was awake."]),
+        confirmed={"overdose"},
+    )
+    mental = _categories(Classifiable(call_type="MENTAL HEALTH"), confirmed={"mental_health"})
+    neighbor = _categories(Classifiable(call_type="NEIGHBOR DISPUTE"), confirmed={"neighbor_dispute"})
+    assert any(item.category == "overdose" and item.counts_officially for item in overdose)
+    assert not any(item.category == "overdose" and item.counts_officially for item in negated)
+    assert any(item.category == "mental_health" and item.counts_officially for item in mental)
+    assert any(item.category == "neighbor_dispute" and item.counts_officially for item in neighbor)
+
+
 def test_citation_flag_is_not_inferred_from_the_word_citation():
     proposals = classify(
         Classifiable(narratives=["The officer issued a citation."], citation_numbers=["C-100"]),

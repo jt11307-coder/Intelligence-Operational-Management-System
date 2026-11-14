@@ -670,6 +670,36 @@ RULES: list[dict] = [
         "narrative_regex": [r"\bpublic safety threat\b"],
         "contradiction_regex": [],
     },
+    {
+        "rule_key": "overdose",
+        "category": "overdose",
+        "group": "significant",
+        "label": "Overdose",
+        "significant": True,
+        "call_phrases": ["OVERDOSE", "DRUG OVERDOSE"],
+        "narrative_regex": [r"\boverdose\b"],
+        "contradiction_regex": [r"\bno overdose\b", r"\bnot an overdose\b"],
+    },
+    {
+        "rule_key": "mental_health",
+        "category": "mental_health",
+        "group": "significant",
+        "label": "Mental health call",
+        "significant": True,
+        "call_phrases": ["MENTAL HEALTH", "PSYCHIATRIC", "PSYCH CALL"],
+        "narrative_regex": [r"\bmental health\b", r"\bpsychiatric\b"],
+        "contradiction_regex": [r"\bno mental health\b"],
+    },
+    {
+        "rule_key": "neighbor_dispute",
+        "category": "neighbor_dispute",
+        "group": "criminal",
+        "label": "Neighbor or civil dispute",
+        "significant": False,
+        "call_phrases": ["NEIGHBOR DISPUTE", "NEIGHBOR COMPLAINT", "CIVIL DISPUTE", "CIVIL NEIGHBOR"],
+        "narrative_regex": [r"\bneighbor dispute\b", r"\bcivil dispute\b"],
+        "contradiction_regex": [],
+    },
 ]
 
 # Repeat-offender linkage is manual. There is intentionally no rule for it.

@@ -284,7 +284,11 @@ class MainWindow(QMainWindow):
         )
 
     def _analysis(self) -> QWidget:
-        page = self._text_page("Crime analysis", "Patterns use official counts and repeat-call locations.")
+        page = self._text_page(
+            "Crime analysis",
+            "Every classifier category and every uploaded call type can flag when its count at least doubles and rises by at least 3. "
+            "A repeat flag is the same call type at one address within 7 calendar days.",
+        )
         button = QPushButton("Run analysis")
         button.clicked.connect(lambda: self._guard(lambda: self._run_analysis(page)))
         page.layout().addWidget(button)
@@ -302,6 +306,13 @@ class MainWindow(QMainWindow):
         chart = write_daily_chart(daily, self.session.paths.working / "daily-calls.png")
         page.chart.setPixmap(QPixmap(str(chart)).scaledToWidth(640, Qt.TransformationMode.SmoothTransformation))
         lines = result["notes"] + [f"Patterns stored: {len(result['patterns'])}.", f"Draft recommendations created: {created}."]
+        if result["patterns"]:
+            placeholders = ",".join("?" for _ in result["patterns"])
+            rows = self.session.conn.execute(
+                f"SELECT name, explanation FROM patterns WHERE id IN ({placeholders}) ORDER BY name",
+                tuple(result["patterns"]),
+            ).fetchall()
+            lines.extend(f"{row['name']}: {row['explanation']}" for row in rows)
         lines.append(f"Peak hours: {peaks.get('peaks') or peaks.get('reason')}.")
         page.output.setPlainText("\n".join(lines))
 

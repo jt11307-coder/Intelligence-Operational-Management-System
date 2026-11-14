@@ -18,6 +18,7 @@ LOCKOUT_MINUTES = 15
 DEFAULT_SESSION_MINUTES = 15
 MIN_PASSWORD_LENGTH = 12
 PERCENT_MIN_BASELINE = 5
+REPEAT_LOCATION_WINDOW_DAYS = 7
 SAME_DRIVE_BACKUP_WARNING = (
     "Backups stored on this external drive do not protect against loss, "
     "theft, or failure of the drive. Copy encrypted backups to a separately "
