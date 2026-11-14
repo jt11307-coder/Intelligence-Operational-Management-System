@@ -2,7 +2,7 @@
 
 Status date: 2026-11-13. Application version: 0.9.0. Workspace: `/agent/wpd-compstat`.
 
-A feature is listed as completed only when the code exists and an automated test or a direct code path covers it. Parser acceptance against a department CAD PDF is not complete. A Windows executable was not produced.
+A feature is listed as completed only when the code exists and an automated test or a direct code path covers it. The Warwick CAD call-log parser reconciles against the 2026 year-to-date PDFs on the agency machine; its profile still needs administrator confirmation. A Windows executable was not produced.
 
 ## Completed features
 
@@ -43,7 +43,8 @@ The folder to copy onto the Lexar drive is `/agent/WPD COMPSTAT`. It includes `O
 
 ## Remaining work
 
-- Obtain the real Warwick CAD call-log PDF, confirm the field layout, and run parser acceptance. Do not mark that test passed before that check.
+- An administrator confirms the `wpd-cad-call-log-v1` profile after spot-checking imported calls against the printout.
+- Decide whether merged calls (`Merge:` header) count as calls for service, and confirm call-source lists using the printed sources (Initiated, Telephone, 911, Walk-In, Other, Alarm System, Radio, Cellular, Flock Hit).
 - Build `WPDCompstat.exe` and `WPDCompstatLauncher.exe` on Windows with `packaging/build_windows.ps1`, copy the application executable into `Application/`, and set the manifest `packaging_status` to `windows_executable` with the new hash.
 - Confirm starter classification rules, shift hours, call-source lists, and division names with the department before they are treated as official.
 - Ask the department what `1500G`, `1500K`, `0200`, `02`, and `KCMH` mean. Leave them unconfirmed until then.
@@ -52,4 +53,4 @@ The folder to copy onto the Lexar drive is `/agent/WPD COMPSTAT`. It includes `O
 
 ## Known limitations
 
-See `docs/limitations-register.md`. The two blockers that stop a department release are the missing CAD PDF and the missing Windows executable.
+See `docs/limitations-register.md`. The open blockers for a department release are administrator confirmation of the call-log profile and the missing Windows executable.

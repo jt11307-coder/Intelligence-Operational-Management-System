@@ -49,13 +49,20 @@ Light and dark appearance follow the saved theme control on the window.
 
 ## Import a call log
 
-1. An administrator opens Administration and confirms a CAD profile only after comparing it with a real department export. The generic labeled profile matches PDFs that already use the program's labeled fields. It is not a claim that Warwick's CAD export uses those labels.
+1. An administrator opens Administration and chooses **Confirm the Warwick CAD call-log profile** after comparing a few imported calls with the printout. That profile reads the CAD "Selective Search" and "Dispatch Log" PDFs. The generic labeled profile is only for PDFs that already use the program's labeled fields.
 2. Until a profile is confirmed, PDF Import stores the file and creates no incidents.
-3. Choose one or more PDFs, then choose Extract, validate, and commit.
-4. Select stores the file under `Source PDFs` and records a batch. Extract reads pages locally. Validate checks identifiers, dates, and duplicates. Commit writes incidents or stops and rolls the batch back.
-5. The match key is the CAD number plus the event date. Importing the same PDF again updates in place when values match and records a conflict when a field disagrees. The previous value stays in field history.
-6. A page without a CAD number is an exception. The program does not invent an identifier.
-7. Officers, narrative lines, citations, and person or vehicle fields from one call stay on that one incident.
+3. Choose one or more PDFs, or a folder (subfolders included), then choose Extract, validate, and commit. The window is busy until the batch finishes; a month of call logs takes several minutes.
+4. For a large backlog, close the program and use the bulk importer from a command prompt. It runs one batch per folder and prints each file's call-line count next to the calls extracted, new, updated, and skipped:
+
+   ```
+   "E:\WPD COMPSTAT\Runtime\py314\Scripts\python.exe" -m wpd_compstat.import_cli --root "E:\WPD COMPSTAT" --user <username> "<folder of PDFs>"
+   ```
+
+   Run it from the program folder (the one holding `src`) with `PYTHONPATH` set to its `src` folder. It asks for the password and does not store it.
+5. Select stores the file under `Source PDFs` and records a batch. Extract reads pages locally. Validate checks identifiers, dates, and duplicates. Commit writes incidents or stops and rolls the batch back.
+6. The match key is the CAD number plus the event date. Importing the same PDF again updates in place when values match and records a conflict when a field disagrees. The previous value stays in field history.
+7. A page without a CAD number is an exception. The program does not invent an identifier.
+8. Officers, narrative lines, citations, and person or vehicle fields from one call stay on that one incident.
 
 Review exceptions in Data Quality before treating a batch as complete.
 

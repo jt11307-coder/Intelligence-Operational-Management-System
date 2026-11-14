@@ -9,13 +9,22 @@ Run on 2026-11-13 in `/agent/wpd-compstat` with the project virtual environment,
 
 The skipped test is not a pass.
 
+## Windows run with the Warwick call-log parser (2026-11-13)
+
+Run on the agency laptop, Windows, Python 3.14, from a clone on the external drive:
+
+```text
+python -m pytest -p no:cacheprovider
+57 passed, 1 skipped
+```
+
+The skipped test is `tests/test_acceptance_local.py`, which needs `WPD_CAD_PDF_DIR`. With `WPD_CAD_PDF_DIR` set to the 2026 year-to-date call-log folder on that machine (41 PDFs, "Selective Search" and "Dispatch Log"), it passed: every file was recognized, had no parse errors, and its parsed call count equaled its count of printed call-number lines. The PDFs and any counts drawn from them stay on the agency machine.
+
 ## Acceptance status
 
-`tests/test_acceptance_blocked.py::test_real_cad_pdf_acceptance` is skipped with the reason: the Warwick CAD call-log PDF was not supplied. Acceptance is not passed.
+Parser reconciliation against real call logs passes locally (above). The `wpd-cad-call-log-v1` profile still needs an administrator to confirm it in the program after comparing a few calls with the printout.
 
-`test_acceptance_is_not_passed` checks that the acceptance flag remains `blocked_missing_pdf` and that `WPD_CAD_PDF` is unset. That test passed. It proves the suite does not claim department-PDF acceptance.
-
-No department incidents were loaded. Synthetic fixtures are labeled and used only for structure.
+Synthetic fixtures in the repository are labeled and invented.
 
 ## Passed tests
 
@@ -67,8 +76,8 @@ Other:
 
 | Check | Result |
 | --- | --- |
-| Parser acceptance on a real Warwick CAD PDF | Blocked. The PDF is not in the workspace or the project store. |
-| End-to-end report reconciliation against department records | Blocked by the same missing PDF. The packet path was reviewed against an empty database and against synthetic rows in unit tests. |
+| Parser acceptance on a real Warwick CAD PDF | Run locally only (`WPD_CAD_PDF_DIR`). Not run in the repository. |
+| End-to-end report reconciliation against department records | A full import into a throwaway installation on the agency drive was run and reconciled per file; published COMPSTAT figures still need a department reviewer. |
 | `WPDCompstat.exe` launch on Windows | Not run. This host is Linux. `packaging/check_windows_build.py` is expected to exit 2. |
 | Drive-letter change on a physical Windows PC | The selection logic was tested with two temporary directories standing in for drive roots. A physical letter change was not available. |
 | Presentation readability on a projector or printed packet | Export code exists. A formatted department packet was not produced because there is no department extract. |
@@ -80,4 +89,4 @@ cd /agent/wpd-compstat
 .venv/bin/python -m pytest --tb=short
 ```
 
-To run the blocked acceptance test later, place the department PDF somewhere local, set `WPD_CAD_PDF` to that path, and remove the skip only after a person has checked the parse against the document. Until that review, leave the skip in place.
+To run the real-PDF acceptance test, set `WPD_CAD_PDF_DIR` to a local folder of call-log PDFs on the agency machine. Never copy those PDFs into the repository.

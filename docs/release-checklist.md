@@ -39,7 +39,7 @@ Current result: the executable boxes are open. This environment printed that Win
 ## Data
 
 - [ ] The real Warwick CAD PDF is on file and has been compared with the parser output.
-- [ ] `test_real_cad_pdf_acceptance` has been reviewed and is no longer skipped. It is skipped today.
+- [ ] `tests/test_acceptance_local.py` passes with `WPD_CAD_PDF_DIR` set on the agency machine, and an administrator has confirmed the `wpd-cad-call-log-v1` profile.
 - [ ] An administrator confirmed the CAD profile after that comparison. The generic profile has not been confirmed against Warwick's export.
 - [ ] Starter rules that the department accepts are marked confirmed. The rest stay unconfirmed.
 - [ ] Agency codes remain unconfirmed until the department defines them.

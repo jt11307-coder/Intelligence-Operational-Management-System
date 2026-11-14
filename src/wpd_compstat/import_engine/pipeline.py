@@ -14,6 +14,8 @@ from wpd_compstat.classification.service import load_codes, load_rules, store_sy
 from wpd_compstat.db.connection import transaction
 from wpd_compstat.db.seed import get_setting
 from wpd_compstat.errors import AppError, ValidationError
+from wpd_compstat.import_engine.call_log import LAYOUT as CALL_LOG_LAYOUT
+from wpd_compstat.import_engine.call_log import count_call_starts, is_call_log
 from wpd_compstat.import_engine.extract import count_tables, extract_pages
 from wpd_compstat.import_engine.merge import match_key, narrative_hash, person_hash, plan_merge
 from wpd_compstat.import_engine.model import (
@@ -52,55 +54,61 @@ def stage_select(session, paths: list[Path], *, ocr: bool = False) -> int:
         path = Path(path)
         if path.suffix.casefold() != ".pdf" or not path.is_file():
             raise ValidationError("Only PDF files can be imported.")
-        data = path.read_bytes()
-        digest = hashlib.sha256(data).hexdigest()
-        existing = session.conn.execute("SELECT * FROM source_pdfs WHERE sha256 = ?", (digest,)).fetchone()
-        if existing is None:
-            relative = f"Source PDFs/{digest}.pdf.enc"
-            seal_file(session.paths.root / relative, session.dek, data)
-            pages, warnings = extract_pages(path, ocr=ocr, work_dir=session.paths.temp)
-            table_total = _safe_table_count(path)
-            stored = session.conn.execute(
-                """
-                INSERT INTO source_pdfs(
-                    original_filename, sha256, byte_size, page_count, stored_relative_path, encrypted, first_stored_at
-                ) VALUES (?, ?, ?, ?, ?, 1, ?)
-                """,
-                (path.name, digest, len(data), len(pages), relative, session.stamp()),
-            )
-            source_id = int(stored.lastrowid)
-            for number, text in pages:
-                session.conn.execute(
-                    """
-                    INSERT INTO source_pages(source_pdf_id, page_number, text_enc)
-                    VALUES (?, ?, ?)
-                    """,
-                    (source_id, number, encrypt_field(session.dek, "page_text", text)),
-                )
-            if table_total:
-                warnings.append(
-                    f"{table_total} table(s) were detected and were not imported as incidents. No table profile is confirmed."
-                )
-            error = "; ".join(warnings) if warnings else None
-        else:
-            source_id = int(existing["id"])
-            error = "This file was already stored. It can still be compared for overlapping incidents."
-        session.conn.execute(
-            """
-            INSERT INTO import_files(batch_id, source_pdf_id, original_filename, sha256, page_count, status, error)
-            VALUES (?, ?, ?, ?, ?, 'stored', ?)
-            """,
-            (
-                batch_id,
-                source_id,
-                path.name,
-                digest,
-                existing["page_count"] if existing is not None else len(pages),
-                error,
-            ),
-        )
+        with transaction(session.conn):
+            _store_file(session, batch_id, path, ocr)
     session.audit("import_select", entity_type="batch", entity_id=batch_id, detail=f"files={len(paths)}")
     return batch_id
+
+
+def _store_file(session, batch_id: int, path: Path, ocr: bool) -> None:
+    """Seal one PDF and record its pages. The caller holds a transaction so a file is never half recorded."""
+    data = path.read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
+    existing = session.conn.execute("SELECT * FROM source_pdfs WHERE sha256 = ?", (digest,)).fetchone()
+    if existing is None:
+        relative = f"Source PDFs/{digest}.pdf.enc"
+        seal_file(session.paths.root / relative, session.dek, data)
+        pages, warnings = extract_pages(path, ocr=ocr, work_dir=session.paths.temp)
+        table_total = 0 if is_call_log(pages) else _safe_table_count(path)
+        stored = session.conn.execute(
+            """
+            INSERT INTO source_pdfs(
+                original_filename, sha256, byte_size, page_count, stored_relative_path, encrypted, first_stored_at
+            ) VALUES (?, ?, ?, ?, ?, 1, ?)
+            """,
+            (path.name, digest, len(data), len(pages), relative, session.stamp()),
+        )
+        source_id = int(stored.lastrowid)
+        for number, text in pages:
+            session.conn.execute(
+                """
+                INSERT INTO source_pages(source_pdf_id, page_number, text_enc)
+                VALUES (?, ?, ?)
+                """,
+                (source_id, number, encrypt_field(session.dek, "page_text", text)),
+            )
+        if table_total:
+            warnings.append(
+                f"{table_total} table(s) were detected and were not imported as incidents. No table profile is confirmed."
+            )
+        error = "; ".join(warnings) if warnings else None
+    else:
+        source_id = int(existing["id"])
+        error = "This file was already stored. It can still be compared for overlapping incidents."
+    session.conn.execute(
+        """
+        INSERT INTO import_files(batch_id, source_pdf_id, original_filename, sha256, page_count, status, error)
+        VALUES (?, ?, ?, ?, ?, 'stored', ?)
+        """,
+        (
+            batch_id,
+            source_id,
+            path.name,
+            digest,
+            existing["page_count"] if existing is not None else len(pages),
+            error,
+        ),
+    )
 
 
 def stage_extract(session, batch_id: int) -> dict:
@@ -141,6 +149,7 @@ def stage_extract(session, batch_id: int) -> dict:
                 "declared_start": parsed.declared_start,
                 "declared_end": parsed.declared_end,
                 "page_count": len(pages),
+                "call_lines": count_call_starts(pages) if profile.get("layout") == CALL_LOG_LAYOUT else None,
                 "incidents": [asdict(incident) for incident in parsed.incidents],
             }
             session.conn.execute(
@@ -251,7 +260,7 @@ def _apply_payload(session, batch_id: int, payload: dict, rules, codes) -> dict:
             )
             counts["exceptions"] += 1
         declared = {"start": file_entry.get("declared_start"), "end": file_entry.get("declared_end")}
-        file_new = 0
+        file_new = file_updated = file_duplicates = file_exceptions = 0
         for raw in file_entry["incidents"]:
             incident = _incident_from_dict(raw)
             counts["extracted"] += 1
@@ -269,11 +278,13 @@ def _apply_payload(session, batch_id: int, payload: dict, rules, codes) -> dict:
                     raw,
                 )
                 counts["exceptions"] += 1
+                file_exceptions += 1
                 continue
             existing = _existing_snapshot(session, key)
             plan = plan_merge(existing, incident)
             if plan["action"] == "duplicate":
                 counts["duplicates"] += 1
+                file_duplicates += 1
                 continue
             if plan["action"] == "insert":
                 incident_id = _insert_incident(session, batch_id, file_entry, incident, key)
@@ -283,6 +294,7 @@ def _apply_payload(session, batch_id: int, payload: dict, rules, codes) -> dict:
                 incident_id = existing["id"]
                 _apply_update(session, batch_id, incident_id, plan, file_entry.get("source_pdf_id"))
                 counts["updated"] += 1
+                file_updated += 1
                 if plan["conflicts"] or plan["omitted_officers"]:
                     counts["conflicts"] += len(plan["conflicts"]) + len(plan["omitted_officers"])
             _replace_system_reading(session, incident_id, incident, rules, codes)
@@ -310,8 +322,13 @@ def _apply_payload(session, batch_id: int, payload: dict, rules, codes) -> dict:
                 "filename": file_entry["filename"],
                 "pages": file_entry["page_count"],
                 "declared_range": declared,
+                "call_lines": file_entry.get("call_lines"),
                 "extracted": len(file_entry["incidents"]),
                 "new_incidents": file_new,
+                "existing_updated": file_updated,
+                "duplicates_skipped": file_duplicates,
+                "exceptions": file_exceptions,
+                "parsing_errors": len(file_entry["errors"]),
             }
         )
     _apply_geocode_reference(session.conn)

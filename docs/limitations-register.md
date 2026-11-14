@@ -4,9 +4,18 @@ Each item says what is limited, what the program does instead, and what would cl
 
 ## Blockers
 
-### L1. Warwick CAD call-log PDF was not supplied
+### L1. Warwick CAD call-log profile needs administrator confirmation
 
-The sample PDF was not in the workspace and not in the project store. The parser has a generic labeled profile used by synthetic tests. That profile is not Warwick's CAD layout. No department incidents were invented. `tests/test_acceptance_blocked.py::test_real_cad_pdf_acceptance` is skipped. Official COMPSTAT figures cannot be reconciled to a real extract until the PDF is provided, the profile is confirmed by an administrator against that file, and the acceptance test is reviewed by hand.
+The parser now reads the real Warwick CAD call-log printout ("Selective Search" and "Dispatch Log"). It was checked against the 2026 year-to-date PDFs on the agency machine: every file's parsed call count equals its count of printed call-number lines. The profile `wpd-cad-call-log-v1` is seeded `unconfirmed`. An administrator confirms it under Administration (or with `--confirm-call-log-profile` on the bulk importer) after comparing a few calls with the printout. `tests/test_acceptance_local.py` repeats the reconciliation when `WPD_CAD_PDF_DIR` points at local PDFs; the PDFs are never committed.
+
+Known layout decisions, each visible in the stored record:
+
+- `Refer To Incident` numbers ending `-OF` are stored as offense report references, `-AR` arrest, `-AC` accident, `Refer To Summons` as `summons`, and `Refer To Field Int` as `field_interview`. Other formats are stored as `other` with a warning.
+- `Refer To Citation` numbers are citation references only. Neither form (`-CN` or the long numeric form) is treated as a verified violation or a warning.
+- A `Merge:` header line is stored as a `merged_with` reference. Merged calls have no printed action, so their disposition stays blank. Merged calls are still counted as calls until the department decides otherwise.
+- The location is the first `Location/Address` (or `Location`, `Vicinity of`). Later `Location Change` lines are kept as stamped narrative entries.
+- Officers are stored by the printed `USERID - Rank Name` text. The first `ID:` is the primary; later IDs are assisting. Dispatch and arrival times are the first printed `Disp-` and `Arvd-` values; clear time is the `Call Closed By` time, or the last `Clrd-` value.
+- Names, addresses, SSNs, dates of birth, arrest charges, insurance, and wrapped person lines stay in the encrypted person payload. Plates and VINs stay in the encrypted plate field.
 
 ### L2. Windows executables were not built
 
@@ -84,4 +93,4 @@ Automated UI coverage opens the main window offscreen and checks an empty incide
 
 ## Closing a limitation
 
-Do not close L1 by synthesizing a CAD PDF. Do not close L2 by renaming a Linux binary. Record the date, the person, and the evidence when a department reviewer confirms a rule, a code, or a profile.
+Do not close L1 by synthesizing a CAD PDF or committing a department PDF. Do not close L2 by renaming a Linux binary. Record the date, the person, and the evidence when a department reviewer confirms a rule, a code, or a profile.

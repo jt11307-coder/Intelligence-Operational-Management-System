@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from pathlib import Path
 
 from PySide6.QtCore import QDate, Qt, QTimer
 from PySide6.QtGui import QPixmap
@@ -45,6 +46,7 @@ from wpd_compstat.backup import create_backup, list_backups
 from wpd_compstat.classification.service import confirm_code
 from wpd_compstat.db.seed import get_setting
 from wpd_compstat.errors import AppError
+from wpd_compstat.import_engine.call_log import CALL_LOG_PROFILE
 from wpd_compstat.import_engine.pipeline import stage_commit, stage_extract, stage_select, stage_validate
 from wpd_compstat.quality import quality_summary
 from wpd_compstat.reporting.charts import write_daily_chart
@@ -527,6 +529,9 @@ class MainWindow(QMainWindow):
         choose = QPushButton("Select PDFs")
         choose.clicked.connect(lambda: self._choose_pdfs(page))
         layout.addWidget(choose)
+        folder = QPushButton("Select a folder of PDFs (includes subfolders)")
+        folder.clicked.connect(lambda: self._choose_folder(page))
+        layout.addWidget(folder)
         run = QPushButton("Extract, validate, and commit")
         run.clicked.connect(lambda: self._guard(lambda: self._run_import(page)))
         layout.addWidget(run)
@@ -539,6 +544,13 @@ class MainWindow(QMainWindow):
         paths, _filter = QFileDialog.getOpenFileNames(self, "Select CAD PDFs", "", "PDF (*.pdf)")
         page.files = paths
         page.list_label.setText("\n".join(paths) if paths else "No files selected.")
+
+    def _choose_folder(self, page) -> None:
+        folder = QFileDialog.getExistingDirectory(self, "Select a folder of CAD PDFs")
+        if not folder:
+            return
+        page.files = [str(path) for path in sorted(Path(folder).rglob("*")) if path.suffix.casefold() == ".pdf"]
+        page.list_label.setText("\n".join(page.files) if page.files else "No PDFs were found in that folder.")
 
     def _run_import(self, page) -> None:
         if not page.files:
@@ -566,6 +578,9 @@ class MainWindow(QMainWindow):
             "Administration",
             "Agency codes have no built-in meaning. Confirm a CAD profile only after checking it against a real export.",
         )
+        call_log = QPushButton("Confirm the Warwick CAD call-log profile (Selective Search / Dispatch Log)")
+        call_log.clicked.connect(lambda: self._guard(self._confirm_call_log_profile))
+        page.layout().addWidget(call_log)
         profile = QPushButton("Confirm the generic labeled profile")
         profile.clicked.connect(lambda: self._guard(self._confirm_generic_profile))
         page.layout().addWidget(profile)
@@ -576,6 +591,18 @@ class MainWindow(QMainWindow):
         shifts.clicked.connect(lambda: self._guard(self._confirm_shifts))
         page.layout().addWidget(shifts)
         return page
+
+    def _confirm_call_log_profile(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "WPD COMPSTAT",
+            "Make the Warwick CAD call-log layout the active confirmed import profile?\n\n"
+            "Confirm only after checking that imported calls match the printed call log.",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        confirm_profile(self.session, CALL_LOG_PROFILE["id"])
+        QMessageBox.information(self, "WPD COMPSTAT", "The Warwick CAD call-log profile is now the active confirmed profile.")
 
     def _confirm_generic_profile(self) -> None:
         confirm_profile(self.session, "generic-labeled-v1")

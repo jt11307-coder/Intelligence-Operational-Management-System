@@ -1,9 +1,14 @@
-"""Parse text extracted from a PDF using an explicit profile. Unrecognized layouts yield no incidents."""
+"""Parse text extracted from a PDF using an explicit profile. Unrecognized layouts yield no incidents.
+
+The Warwick CAD call-log layout is parsed by call_log.py; this module parses the generic labeled profile.
+"""
 
 from __future__ import annotations
 
 import re
 
+from wpd_compstat.import_engine.call_log import LAYOUT as CALL_LOG_LAYOUT
+from wpd_compstat.import_engine.call_log import parse_call_log
 from wpd_compstat.import_engine.dates import parse_date, parse_time
 from wpd_compstat.import_engine.model import (
     ParseOutput,
@@ -30,6 +35,8 @@ _YES = {"yes", "true", "1", "y"}
 
 def parse_pages(pages: list[tuple[int, str]], profile: dict) -> ParseOutput:
     profile = validate_profile(profile)
+    if profile.get("layout") == CALL_LOG_LAYOUT:
+        return parse_call_log(pages, profile)
     if not pages:
         return ParseOutput(False, [], ["The PDF has no pages."], [])
     joined, spans = _join(pages)

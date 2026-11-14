@@ -51,6 +51,8 @@ GENERIC_PROFILE: dict = {
 
 
 def validate_profile(definition: dict) -> dict:
+    if definition.get("layout") == "wpd_call_log":
+        return _validate_call_log(definition)
     required = {"incident_start", "incident_end", "date_order", "labels", "require_banner"}
     missing = required - set(definition)
     if missing:
@@ -67,6 +69,17 @@ def validate_profile(definition: dict) -> dict:
             raise ValidationError("Profile labels cannot contain line breaks.")
     if not str(definition["incident_start"]).strip():
         raise ValidationError("The incident start marker is empty.")
+    return definition
+
+
+def _validate_call_log(definition: dict) -> dict:
+    if not str(definition.get("banner") or "").strip():
+        raise ValidationError("The call-log profile needs the agency banner line.")
+    titles = definition.get("report_titles")
+    if not isinstance(titles, list) or not titles or not all(isinstance(item, str) and item.strip() for item in titles):
+        raise ValidationError("The call-log profile needs at least one report title.")
+    if definition.get("date_order") != "MDY":
+        raise ValidationError("The call-log profile reads month/day/year dates.")
     return definition
 
 

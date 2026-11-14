@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from wpd_compstat.classification.taxonomy import RULES
 from wpd_compstat.constants import AGENCY_CODES, DEFAULT_SESSION_MINUTES, PERCENT_MIN_BASELINE
+from wpd_compstat.import_engine.call_log import CALL_LOG_PROFILE
 from wpd_compstat.import_engine.profile import GENERIC_PROFILE, profile_json
 
 DIVISIONS = (
@@ -96,14 +97,15 @@ def seed(conn, now: str | None = None) -> None:
             """,
             (rule["rule_key"], rule["category"], json.dumps(rule), stamp),
         )
-    conn.execute(
-        """
-        INSERT INTO cad_profiles(id, name, confirmation, definition_json, updated_at)
-        VALUES (?, ?, 'unconfirmed', ?, ?)
-        ON CONFLICT(id) DO NOTHING
-        """,
-        (GENERIC_PROFILE["id"], GENERIC_PROFILE["name"], profile_json(GENERIC_PROFILE), stamp),
-    )
+    for profile in (GENERIC_PROFILE, CALL_LOG_PROFILE):
+        conn.execute(
+            """
+            INSERT INTO cad_profiles(id, name, confirmation, definition_json, updated_at)
+            VALUES (?, ?, 'unconfirmed', ?, ?)
+            ON CONFLICT(id) DO NOTHING
+            """,
+            (profile["id"], profile["name"], profile_json(profile), stamp),
+        )
 
 
 def get_setting(conn, key: str, default=None):

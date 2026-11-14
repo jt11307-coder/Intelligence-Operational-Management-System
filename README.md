@@ -30,4 +30,4 @@ The installation folder name must be `WPD COMPSTAT`. The first launch creates th
 .venv/bin/python -m pytest
 ```
 
-Parser acceptance against a real Warwick CAD PDF is skipped until that PDF is supplied. See `docs/test-results.md`.
+The Warwick CAD call-log layout is parsed by `src/wpd_compstat/import_engine/call_log.py`. Acceptance against real PDFs runs only on the agency machine (`WPD_CAD_PDF_DIR`); department PDFs never enter the repository.

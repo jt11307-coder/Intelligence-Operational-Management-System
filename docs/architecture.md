@@ -53,11 +53,13 @@ Seed data inserts settings, placeholder divisions, unconfirmed agency codes, sta
 ## Import pipeline
 
 1. **Select.** Authorized role only. Each path must be a PDF. The file is hashed and sealed. A batch row is opened.
-2. **Extract.** PyMuPDF reads text. pdfplumber counts tables. Pages are stored with the batch. OCR is off unless a caller passes the flag, and there is no cloud OCR.
+2. **Extract.** PyMuPDF reads text. pdfplumber counts tables, except for recognized Warwick call logs, whose fixed-column text is not a table. Pages are stored with the batch. OCR is off unless a caller passes the flag, and there is no cloud OCR.
 3. **Validate.** The active profile must be `agency_confirmed`. Otherwise the batch stops with the PDF retained and zero incidents. The parser applies the profile's labels. Unknown labels are ignored. Incidents that cross pages stay one record when the CAD number continues.
 4. **Commit.** One transaction. Match key `CAD|DATE`. Insert, exact duplicate, or field-level conflict with history. Child rows for narratives, officers, citations, and encrypted parties are written on the same incident. A raised error rolls the transaction back. System classification is recalculated from the stored text.
 
-The generic profile is a labeled interchange format for structural tests and for a department that chooses to export those labels. It is not accepted as Warwick's CAD layout. That layout is blocked on the missing sample PDF.
+The generic profile is a labeled interchange format for structural tests and for a department that chooses to export those labels. It is not Warwick's CAD layout.
+
+The Warwick layout is `import_engine/call_log.py` (profile `wpd-cad-call-log-v1`, layout `wpd_call_log`). It strips each page's banner, reads `For Date:` lines for the event date, starts a call at a `YY-NNNNN  HHMM` line followed by a `Source - Reason` line, and reads labeled fields whose colon sits at column 18 or 24. Text at any other column belongs to the open narrative, so narrative lines that look like `Label: value` are not mistaken for fields. Each file's extracted count is reconciled against an independent count of call-number lines (`call_lines` in the batch summary).
 
 ## Counting rules
 
