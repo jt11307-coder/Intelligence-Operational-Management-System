@@ -63,10 +63,9 @@ def category_metric(conn, start, end, metric_id: str, label: str, categories: se
         categories = {categories}
     placeholders = ",".join("?" for _ in categories)
     sql = f"""
-        EXISTS (
-            SELECT 1 FROM classifications c
-            WHERE c.incident_id = incidents.id
-              AND c.counts_officially = 1
+        incidents.id IN (
+            SELECT c.incident_id FROM classifications c
+            WHERE c.counts_officially = 1
               AND c.status != 'rejected'
               AND c.polarity = 'occurred'
               AND c.category IN ({placeholders})
@@ -78,10 +77,9 @@ def category_metric(conn, start, end, metric_id: str, label: str, categories: se
 
 def significant_incidents(conn, start, end) -> MetricResult:
     sql = """
-        EXISTS (
-            SELECT 1 FROM classifications c
-            WHERE c.incident_id = incidents.id
-              AND c.counts_officially = 1
+        incidents.id IN (
+            SELECT c.incident_id FROM classifications c
+            WHERE c.counts_officially = 1
               AND c.status != 'rejected'
               AND c.polarity = 'occurred'
               AND c.significant = 1

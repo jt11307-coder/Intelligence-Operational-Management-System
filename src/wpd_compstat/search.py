@@ -66,10 +66,9 @@ def search_incidents(session, filters: dict) -> list[dict]:
     if filters.get("category"):
         clauses.append(
             """
-            EXISTS (
-                SELECT 1 FROM classifications c
-                WHERE c.incident_id = i.id AND c.category = ?
-                  AND c.counts_officially = 1 AND c.status != 'rejected'
+            i.id IN (
+                SELECT c.incident_id FROM classifications c
+                WHERE c.category = ? AND c.counts_officially = 1 AND c.status != 'rejected'
             )
             """
         )
