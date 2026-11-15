@@ -8,6 +8,25 @@ accepts a single incident classification. Agency codes are not rules.
 from __future__ import annotations
 
 # suppress_if: if this category also occurred, drop the current category.
+# Narrative overrides of a dispatched call type (officer updates outrank dispatch):
+#   contradiction_regex      clear contradiction; the dispatched category stops counting
+#   override_to              category the call counts as instead, if any
+#   override_conflict_regex  text pointing the other way; a contradiction plus this is left for review
+#   override_uncertain_regex softer hints that are left for review, never applied automatically
+#   call_exclude_phrases     call types containing these never match the rule's call phrases
+MISSING_CONTRADICTIONS = [
+    r"\bnot (?:actually |really )?missing\b",
+    r"\bisn'?t missing\b",
+    r"\bwasn'?t missing\b",
+    r"\bnever (?:went )?missing\b",
+]
+MISSING_CONFLICTS = [r"\bstill missing\b", r"\bremains? missing\b", r"\bentered (?:in(?:to)? )?ncic\b"]
+MISSING_HINTS = [
+    r"\blocated\b",
+    r"\breturned (?:home|to)\b",
+    r"\bfound (?:at|safe)\b",
+    r"\b(?:staying|is|was) (?:at|with) (?:a |his |her |their )?(?:friend|relative|boyfriend|girlfriend|mother|father|parent|grandmother|grandfather)",
+]
 RULES: list[dict] = [
     {
         "rule_key": "motor_vehicle_accident",
@@ -25,9 +44,15 @@ RULES: list[dict] = [
         "group": "traffic",
         "label": "Property-damage accident",
         "significant": False,
-        "call_phrases": ["PROPERTY DAMAGE ACCIDENT", "PD ACCIDENT", "PROPERTY DAMAGE ONLY"],
+        "call_phrases": ["PROPERTY DAMAGE ACCIDENT", "PD ACCIDENT", "PROPERTY DAMAGE ONLY", "NO INJURY"],
         "narrative_regex": [r"\bproperty damage (?:accident|only)\b"],
-        "contradiction_regex": [r"\binjury reported\b"],
+        "contradiction_regex": [
+            r"\binjur(?:y|ies) reported\b",
+            r"\btransported to (?:the )?hospital\b",
+            r"\bcomplain\w* of (?:\w+ ){0,2}pain\b",
+        ],
+        "override_conflict_regex": [r"\bno injur", r"\bnon[- ]injury\b", r"\bno one (?:was )?(?:injured|hurt)\b"],
+        "override_to": "injury_accident",
     },
     {
         "rule_key": "injury_accident",
@@ -35,9 +60,29 @@ RULES: list[dict] = [
         "group": "traffic",
         "label": "Injury accident",
         "significant": True,
-        "call_phrases": ["INJURY ACCIDENT", "ACCIDENT WITH INJURY", "PI ACCIDENT", "CRASH WITH INJURY"],
+        "call_phrases": [
+            "INJURY ACCIDENT", "ACCIDENT WITH INJURY", "PI ACCIDENT", "CRASH WITH INJURY",
+            "WITH INJURIES", "WITH INJURY", "W/INJURIES", "W/INJURY",
+        ],
         "narrative_regex": [r"\binjury accident\b", r"\binjuries from the (?:crash|accident)\b"],
-        "contradiction_regex": [r"\bno injur", r"\bwithout injur", r"\bproperty damage only\b"],
+        "contradiction_regex": [
+            r"\bno injur",
+            r"\bwithout injur",
+            r"\bnon[- ]injury\b",
+            r"\bno one (?:was )?(?:injured|hurt)\b",
+            r"\bnobody (?:was )?(?:injured|hurt)\b",
+            r"\bno complaints? of (?:pain|injur)",
+            r"\bdenied (?:any )?injur",
+            r"\bproperty damage only\b",
+        ],
+        "override_conflict_regex": [
+            r"\btransported\b",
+            r"\binjured\b",
+            r"\bcomplain\w* of (?:\w+ ){0,2}pain\b",
+            r"\binjur(?:y|ies) (?:reported|sustained)\b",
+            r"\bhospital\b",
+        ],
+        "override_to": "property_damage_accident",
     },
     {
         "rule_key": "fatal_accident",
@@ -208,7 +253,8 @@ RULES: list[dict] = [
         "label": "Assault",
         "significant": False,
         "call_phrases": ["ASSAULT"],
-        "narrative_regex": [r"\bassault(?:ed)?\b"],
+        "call_exclude_phrases": ["SEX", "SEXUAL"],
+        "narrative_regex": [r"(?<!sex )(?<!sexual )(?<!sexually )\bassault(?:ed)?\b"],
         "contradiction_regex": [r"\bno assault\b"],
         "suppress_if": ["aggravated_assault", "sexual_assault", "officer_assault"],
     },
@@ -249,8 +295,8 @@ RULES: list[dict] = [
         "group": "criminal",
         "label": "Sexual assault",
         "significant": True,
-        "call_phrases": ["SEXUAL ASSAULT"],
-        "narrative_regex": [r"\bsexual assault\b"],
+        "call_phrases": ["SEXUAL ASSAULT", "SEX ASSAULT"],
+        "narrative_regex": [r"\bsex(?:ual(?:ly)?)? assault(?:ed)?\b"],
         "contradiction_regex": [],
     },
     {
@@ -363,7 +409,8 @@ RULES: list[dict] = [
         "significant": False,
         "call_phrases": ["DRUG OFFENSE", "DRUG POSSESSION", "NARCOTIC"],
         "narrative_regex": [r"\bdrug (?:offense|possession|arrest)\b", r"\bnarcotics?\b"],
-        "contradiction_regex": [r"\bno (?:drugs|narcotics)\b"],
+        "contradiction_regex": [],
+        "override_uncertain_regex": [r"\bno (?:drugs|narcotics)\b"],
     },
     {
         "rule_key": "fraud",
@@ -554,7 +601,9 @@ RULES: list[dict] = [
         "significant": True,
         "call_phrases": ["MISSING PERSON", "MISSING ADULT"],
         "narrative_regex": [r"\bmissing (?:person|adult)\b"],
-        "contradiction_regex": [r"\bnot missing\b"],
+        "contradiction_regex": MISSING_CONTRADICTIONS,
+        "override_conflict_regex": MISSING_CONFLICTS,
+        "override_uncertain_regex": MISSING_HINTS,
         "suppress_if": ["missing_juvenile"],
     },
     {
@@ -565,7 +614,9 @@ RULES: list[dict] = [
         "significant": True,
         "call_phrases": ["MISSING JUVENILE", "MISSING CHILD"],
         "narrative_regex": [r"\bmissing juvenile\b", r"\bmissing child\b"],
-        "contradiction_regex": [],
+        "contradiction_regex": MISSING_CONTRADICTIONS,
+        "override_conflict_regex": MISSING_CONFLICTS,
+        "override_uncertain_regex": MISSING_HINTS,
     },
     {
         "rule_key": "found_person",

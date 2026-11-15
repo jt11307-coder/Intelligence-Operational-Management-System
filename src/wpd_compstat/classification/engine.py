@@ -146,19 +146,74 @@ def _confidence_for(polarity: str, confirmed: bool, structured: bool) -> tuple[s
     return "probable_review", False
 
 
-def _structured_veto(rule: dict, narratives: list[str]) -> str | None:
-    compiled = _compile(rule.get("contradiction_regex") or [])
-    narrative_patterns = _compile(rule.get("narrative_regex") or [])
+_SELF_NEGATING = re.compile(r"^(?:no|not|never|without|non|nobody|denied)\b", re.IGNORECASE)
+
+
+@dataclass
+class NarrativeCheck:
+    """How the officer's narrative bears on the dispatched call type."""
+
+    outcome: str  # "override" or "unresolved"
+    kind: str
+    sentence: str
+    phrase: str
+
+
+def _asserted(sentence: str, match: re.Match[str]) -> bool:
+    if _SELF_NEGATING.match(match.group(0)):
+        return True
+    return not _negated(sentence, match.start(), match.end())
+
+
+def _first(patterns: list[re.Pattern[str]], narratives: list[str]) -> tuple[str, re.Match[str]] | None:
     for text in narratives:
         for sentence in _sentences(text):
-            for pattern in compiled:
-                if pattern.search(sentence):
-                    return "contradictory"
-            for pattern in narrative_patterns:
+            for pattern in patterns:
+                for match in pattern.finditer(sentence):
+                    if _asserted(sentence, match):
+                        return sentence, match
+    return None
+
+
+def check_narrative(rule: dict, narratives: list[str]) -> NarrativeCheck | None:
+    """Officer updates outrank the dispatched call type only when they clearly contradict it.
+
+    A contradiction phrase with nothing pointing the other way overrides the dispatched
+    category. Mixed signals, softer hints, and bare negated mentions are left for review.
+    """
+    clear = _first(_compile(rule.get("contradiction_regex") or []), narratives)
+    affirm = _first(_compile(rule.get("override_conflict_regex") or []), narratives)
+    if affirm is None:
+        for text in narratives:
+            for sentence in _sentences(text):
+                for pattern in _compile(rule.get("narrative_regex") or []):
+                    match = pattern.search(sentence)
+                    if match and _narrative_polarity(sentence, match, bool(re.search(r"\s", pattern.pattern))) == "occurred":
+                        affirm = (sentence, match)
+                        break
+                if affirm:
+                    break
+            if affirm:
+                break
+    if clear is not None:
+        sentence, match = clear
+        if affirm is not None:
+            return NarrativeCheck("unresolved", "mixed_signals", sentence, match.group(0))
+        return NarrativeCheck("override", "clear_contradiction", sentence, match.group(0))
+    hint = _first(_compile(rule.get("override_uncertain_regex") or []), narratives)
+    if hint is not None and affirm is None:
+        return NarrativeCheck("unresolved", "possible_contradiction", hint[0], hint[1].group(0))
+    for text in narratives:
+        for sentence in _sentences(text):
+            for pattern in _compile(rule.get("narrative_regex") or []):
                 match = pattern.search(sentence)
                 if match and _negated(sentence, match.start(), match.end()):
-                    return "negated"
+                    return NarrativeCheck("unresolved", "negated_mention", sentence, match.group(0))
     return None
+
+
+def _excluded_call_type(rule: dict, structured_text: str) -> bool:
+    return any(_phrase_in(structured_text, phrase) for phrase in rule.get("call_exclude_phrases") or [])
 
 
 def _match_sentence_all(rule: dict, narratives: list[str]) -> str | None:
@@ -178,29 +233,70 @@ def classify_rules(record: Classifiable, rules: list[dict]) -> list[Proposal]:
     structured_text = " ".join(
         part for part in (record.call_type, record.call_classification) if part
     )
+    by_category = {rule["category"]: rule for rule in rules}
+    dispatched = _excerpt(record.call_type or record.call_classification or "")
     for rule in rules:
         if rule.get("enabled", True) is False:
             continue
         confirmed = rule.get("confirmation") == "agency_confirmed"
         significant = rule.get("group") == "significant"
         structured_hit = any(_phrase_in(structured_text, phrase) for phrase in rule.get("call_phrases") or [])
+        if structured_hit and _excluded_call_type(rule, structured_text):
+            structured_hit = False
         if structured_hit:
-            veto = _structured_veto(rule, record.narratives)
-            if veto:
-                confidence, counts = _confidence_for(veto if veto != "negated" else "contradictory", confirmed, True)
-                polarity = "contradictory" if veto == "negated" else veto
+            check = check_narrative(rule, record.narratives)
+            if check is not None and check.outcome == "override":
+                override = {
+                    "kind": "narrative_override",
+                    "source": "narrative",
+                    "text": _excerpt(check.sentence),
+                    "phrase": check.phrase,
+                    "dispatched_call_type": dispatched,
+                }
                 proposals.append(
                     Proposal(
                         category=rule["category"],
-                        polarity=polarity,
+                        polarity="contradictory",
                         confidence="contradictory",
                         counts_officially=False,
-                        significant=significant,
-                        evidence=[{
-                            "kind": "structured_call_type_contradicted",
-                            "source": "call_type",
-                            "text": _excerpt(record.call_type or record.call_classification or ""),
-                        }],
+                        significant=False,
+                        evidence=[{"kind": "structured_call_type_contradicted", "source": "call_type", "text": dispatched}, override],
+                        rule_key=rule["rule_key"],
+                    )
+                )
+                target = by_category.get(rule.get("override_to") or "")
+                if target is not None and target.get("enabled", True) is not False:
+                    target_confirmed = target.get("confirmation") == "agency_confirmed"
+                    confidence, counts = _confidence_for("occurred", target_confirmed, True)
+                    proposals.append(
+                        Proposal(
+                            category=target["category"],
+                            polarity="occurred",
+                            confidence=confidence,
+                            counts_officially=counts,
+                            significant=target.get("group") == "significant" and counts,
+                            evidence=[override],
+                            rule_key=f"{rule['rule_key']}>{target['rule_key']}",
+                        )
+                    )
+            elif check is not None:
+                proposals.append(
+                    Proposal(
+                        category=rule["category"],
+                        polarity="occurred",
+                        confidence="probable_review",
+                        counts_officially=False,
+                        significant=False,
+                        evidence=[
+                            {"kind": "structured_call_type", "source": "call_type", "text": dispatched},
+                            {
+                                "kind": "narrative_contradiction_unresolved",
+                                "source": "narrative",
+                                "reason": check.kind,
+                                "text": _excerpt(check.sentence),
+                                "phrase": check.phrase,
+                            },
+                        ],
                         rule_key=rule["rule_key"],
                     )
                 )
@@ -285,8 +381,32 @@ def _suppress(proposals: list[Proposal]) -> list[Proposal]:
     return proposals
 
 
-def classify(record: Classifiable, rules: list[dict]) -> list[Proposal]:
-    proposals = classify_rules(record, rules)
+def code_proposals(record: Classifiable, rules: list[dict], codes: list[dict]) -> list[Proposal]:
+    """Confirmed agency codes that an administrator mapped to a category."""
+    from wpd_compstat.classification.codes import scan_codes
+
+    groups = {rule["category"]: rule.get("group") for rule in rules}
+    proposals = []
+    for mention in scan_codes(record.call_type, record.narratives, codes):
+        category = mention.get("category")
+        if mention["status"] != "definition_confirmed" or not category:
+            continue
+        proposals.append(
+            Proposal(
+                category=category,
+                polarity="occurred",
+                confidence="confirmed_structured",
+                counts_officially=True,
+                significant=groups.get(category) == "significant",
+                evidence=[{"kind": "agency_code", "source": mention["code"], "text": mention["evidence"]}],
+                rule_key=f"code:{mention['code']}",
+            )
+        )
+    return proposals
+
+
+def classify(record: Classifiable, rules: list[dict], codes: list[dict] | None = None) -> list[Proposal]:
+    proposals = classify_rules(record, rules) + code_proposals(record, rules, codes or [])
     suppress_map = {rule["category"]: set(rule.get("suppress_if") or []) for rule in rules}
     blocking = {item.category for item in proposals if item.polarity == "occurred"}
     kept: list[Proposal] = []

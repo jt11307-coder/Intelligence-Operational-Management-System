@@ -99,7 +99,12 @@ def seed(conn, now: str | None = None) -> None:
             INSERT INTO classification_rules(
                 rule_key, category, definition_json, enabled, confirmation, updated_at
             ) VALUES (?, ?, ?, 1, 'starter_unconfirmed', ?)
-            ON CONFLICT(rule_key) DO NOTHING
+            ON CONFLICT(rule_key) DO UPDATE SET
+                category = excluded.category,
+                definition_json = excluded.definition_json,
+                updated_at = excluded.updated_at
+            WHERE classification_rules.confirmation = 'starter_unconfirmed'
+              AND classification_rules.definition_json != excluded.definition_json
             """,
             (rule["rule_key"], rule["category"], json.dumps(rule), stamp),
         )

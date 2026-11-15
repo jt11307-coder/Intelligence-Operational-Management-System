@@ -55,8 +55,18 @@ def _exact_call_type(call_type: str | None, code: str) -> bool:
 
 def _token_scan(code: str, texts: list[str]) -> tuple[bool, str]:
     # Times such as 02:00 or 0200 adjacent to a colon are not the code 0200.
-    pattern = re.compile(rf"(?<![:\w]){re.escape(code)}(?![:\w])", re.IGNORECASE)
+    pattern = re.compile(rf"(?<![:\w-]){re.escape(code)}(?![:\w])", re.IGNORECASE)
     for text in texts:
-        if pattern.search(text or ""):
+        for match in pattern.finditer(text or ""):
+            if code.isdigit() and _reads_as_time(text, match.start(), match.end()):
+                continue
             return True, "The code appears as its own token. No meaning was assigned."
     return False, ""
+
+
+_TIME_AFTER = re.compile(r"^\s*(?:-\s*\d{4}\b|to\s+\d{4}\b|hrs?\b|hours?\b|h\b)", re.IGNORECASE)
+_TIME_BEFORE = re.compile(r"(?:\bat|\bapprox\.?|\bapproximately|\baround|\buntil|\bsince|\bfrom|\bby|@)\s*$", re.IGNORECASE)
+
+
+def _reads_as_time(text: str, start: int, end: int) -> bool:
+    return bool(_TIME_AFTER.match(text[end:end + 12]) or _TIME_BEFORE.search(text[max(0, start - 16):start]))

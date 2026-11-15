@@ -74,9 +74,13 @@ def classifiable_from_incident(conn, incident_id: int) -> Classifiable:
 
 
 def store_system_classifications(conn, incident_id: int, record: Classifiable, rules, codes, stamp: str) -> None:
-    proposals = classify(record, rules)
+    proposals = classify(record, rules, codes)
     for proposal in proposals:
         _insert_proposal(conn, incident_id, proposal, stamp)
+    store_code_mentions(conn, incident_id, record, codes)
+
+
+def store_code_mentions(conn, incident_id: int, record: Classifiable, codes) -> None:
     for mention in scan_codes(record.call_type, record.narratives, codes):
         conn.execute(
             """
@@ -86,23 +90,6 @@ def store_system_classifications(conn, incident_id: int, record: Classifiable, r
             """,
             (incident_id, mention["code"], mention["evidence"], mention["status"]),
         )
-        category = mention.get("category")
-        if mention["status"] == "definition_confirmed" and category in CATEGORY_LABELS:
-            conn.execute(
-                """
-                INSERT INTO classifications(
-                    incident_id, category, polarity, confidence, counts_officially,
-                    significant, evidence_json, rule_key, status, created_at
-                ) VALUES (?, ?, 'occurred', 'confirmed_structured', 1, 0, ?, ?, 'system', ?)
-                """,
-                (
-                    incident_id,
-                    category,
-                    json.dumps([{"kind": "agency_code", "source": mention["code"], "text": mention["evidence"]}]),
-                    f"code:{mention['code']}",
-                    stamp,
-                ),
-            )
 
 
 def reevaluate_classifications(session) -> int:
@@ -137,19 +124,12 @@ def reevaluate_classifications(session) -> int:
             record = classifiable_from_incident(session.conn, incident_id)
             proposals = [
                 proposal
-                for proposal in classify(record, rules)
+                for proposal in classify(record, rules, codes)
                 if proposal.category not in manual
             ]
             for proposal in proposals:
                 _insert_proposal(session.conn, incident_id, proposal, session.stamp())
-            for mention in scan_codes(record.call_type, record.narratives, codes):
-                session.conn.execute(
-                    """
-                    INSERT INTO code_mentions(incident_id, code, evidence, status)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (incident_id, mention["code"], mention["evidence"], mention["status"]),
-                )
+            store_code_mentions(session.conn, incident_id, record, codes)
             after = session.conn.execute(
                 "SELECT COUNT(*) AS n FROM classifications WHERE incident_id = ?",
                 (incident_id,),

@@ -153,3 +153,97 @@ def test_citation_flag_is_not_inferred_from_the_word_citation():
     )
     assert any(item.category == "citation_reference" and item.counts_officially for item in proposals)
     assert not any(item.category == "verified_traffic_violation" and item.counts_officially for item in proposals)
+
+
+SEX_CODE = [{"code": "0200", "status": "confirmed", "match_json": {"category": "sexual_assault", "scan_narrative": True}}]
+
+
+def _official(proposals, category):
+    return [item for item in proposals if item.category == category and item.counts_officially]
+
+
+def test_sex_assault_call_type_is_sexual_assault_never_assault():
+    proposals = _categories(Classifiable(call_type="Sex Assault"), confirmed={"assault", "sexual_assault"})
+    assert _official(proposals, "sexual_assault")
+    assert not any(item.category == "assault" for item in proposals)
+
+
+def test_sexually_assaulted_in_a_narrative_is_not_assault():
+    proposals = _categories(
+        Classifiable(call_type="INFORMATION", narratives=["The victim stated she was sexually assaulted and the suspect assaulted her."]),
+        confirmed={"assault", "sexual_assault"},
+    )
+    assert any(item.category == "sexual_assault" for item in proposals)
+    assert not any(item.category == "assault" and item.polarity == "occurred" for item in proposals)
+
+
+def test_confirmed_0200_code_counts_as_sexual_assault_and_suppresses_assault():
+    proposals = classify(
+        Classifiable(call_type="ASSAULT/PAST", narratives=["Unit advised this is a 0200."]),
+        _rules({"assault", "sexual_assault"}),
+        SEX_CODE,
+    )
+    assert _official(proposals, "sexual_assault")
+    assert not _official(proposals, "assault")
+
+
+def test_0200_as_a_time_is_not_the_code():
+    for text in ("Arrived at 0200 and cleared.", "Patrol from 0200-0300.", "Checked the lot 0200 hrs."):
+        assert scan_codes("INFORMATION", [text], SEX_CODE) == []
+
+
+def test_no_injury_update_overrides_an_injury_dispatch_and_records_the_phrase():
+    proposals = _categories(
+        Classifiable(call_type="MV ACC, WITH INJURIES", narratives=["Both operators checked. No injuries, tow requested."]),
+        confirmed={"injury_accident", "property_damage_accident"},
+    )
+    assert not _official(proposals, "injury_accident")
+    damage = _official(proposals, "property_damage_accident")
+    assert damage
+    evidence = damage[0].evidence[0]
+    assert evidence["kind"] == "narrative_override"
+    assert evidence["phrase"].lower() == "no injur"
+    assert evidence["dispatched_call_type"] == "MV ACC, WITH INJURIES"
+
+
+def test_no_injury_with_a_hospital_transport_is_left_for_review():
+    proposals = _categories(
+        Classifiable(
+            call_type="MV ACC, WITH INJURIES",
+            narratives=["Driver one reported no injuries.", "Driver two transported by rescue."],
+        ),
+        confirmed={"injury_accident", "property_damage_accident"},
+    )
+    injury = [item for item in proposals if item.category == "injury_accident"]
+    assert injury and not injury[0].counts_officially
+    assert injury[0].evidence[1]["reason"] == "mixed_signals"
+    assert not _official(proposals, "property_damage_accident")
+
+
+def test_no_injury_reported_does_not_flip_a_no_injury_dispatch():
+    proposals = _categories(
+        Classifiable(call_type="MV ACC, NO INJURY", narratives=["No injury reported by either party."]),
+        confirmed={"injury_accident", "property_damage_accident"},
+    )
+    assert _official(proposals, "property_damage_accident")
+    assert not _official(proposals, "injury_accident")
+
+
+def test_not_missing_update_overrides_a_missing_person_dispatch():
+    proposals = _categories(
+        Classifiable(call_type="MISSING PERSON", narratives=["Subject is not missing, staying with a relative."]),
+        confirmed={"missing_person"},
+    )
+    missing = [item for item in proposals if item.category == "missing_person"]
+    assert missing and missing[0].polarity == "contradictory" and not missing[0].counts_officially
+    assert missing[0].evidence[1]["phrase"].lower() == "not missing"
+
+
+def test_located_after_a_missing_report_is_left_for_review():
+    proposals = _categories(
+        Classifiable(call_type="MISSING PERSON", narratives=["Subject was located at a friend's house."]),
+        confirmed={"missing_person"},
+    )
+    missing = [item for item in proposals if item.category == "missing_person"]
+    assert missing and not missing[0].counts_officially
+    assert missing[0].evidence[1]["reason"] == "possible_contradiction"

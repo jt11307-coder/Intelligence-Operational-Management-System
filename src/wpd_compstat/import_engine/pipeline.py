@@ -594,22 +594,13 @@ def _replace_system_reading(session, incident_id: int, incident: ParsedIncident,
     # Keep user decisions. Filter after classify by inserting only new categories.
     from wpd_compstat.classification.engine import classify
 
-    proposals = [proposal for proposal in classify(record, rules) if proposal.category not in manual]
+    from wpd_compstat.classification.service import _insert_proposal, store_code_mentions
+
+    proposals = [proposal for proposal in classify(record, rules, codes) if proposal.category not in manual]
     for proposal in proposals:
-        from wpd_compstat.classification.service import _insert_proposal
-
         _insert_proposal(session.conn, incident_id, proposal, session.stamp())
-    from wpd_compstat.classification.codes import scan_codes
-
     session.conn.execute("DELETE FROM code_mentions WHERE incident_id = ?", (incident_id,))
-    for mention in scan_codes(record.call_type, record.narratives, codes):
-        session.conn.execute(
-            """
-            INSERT INTO code_mentions(incident_id, code, evidence, status)
-            VALUES (?, ?, ?, ?)
-            """,
-            (incident_id, mention["code"], mention["evidence"], mention["status"]),
-        )
+    store_code_mentions(session.conn, incident_id, record, codes)
 
 
 def _existing_snapshot(session, key: str) -> dict | None:
