@@ -13,12 +13,10 @@ import getpass
 import sys
 from pathlib import Path
 
-import pymupdf
-
 from wpd_compstat.admin import confirm_profile
 from wpd_compstat.errors import AppError
-from wpd_compstat.import_engine.call_log import CALL_LOG_PROFILE, TITLE_RANGE
-from wpd_compstat.import_engine.dates import parse_date
+from wpd_compstat.import_engine.bulk import collect_pdfs, group_batches
+from wpd_compstat.import_engine.call_log import CALL_LOG_PROFILE
 from wpd_compstat.import_engine.pipeline import stage_commit, stage_extract, stage_select, stage_validate
 from wpd_compstat.paths import use_install_temp
 from wpd_compstat.session import Session
@@ -114,34 +112,8 @@ def _profile_ready(session: Session, may_confirm: bool) -> bool:
 
 
 def _groups(folder: Path) -> list[tuple[str, list[Path]]]:
-    """One batch per folder, ordered by the latest date each folder covers; files inside a batch follow their printed range."""
-    by_folder: dict[Path, list[tuple[tuple, Path]]] = {}
-    for path in sorted(folder.rglob("*")):
-        if path.is_file() and path.suffix.casefold() == ".pdf":
-            by_folder.setdefault(path.parent, []).append((_range_key(path), path))
-    ordered = []
-    for parent, items in by_folder.items():
-        items.sort()
-        label = parent.name if parent != folder else folder.name
-        latest_end = max(key[1] for key, _path in items)
-        ordered.append((latest_end, label, [path for _key, path in items]))
-    ordered.sort(key=lambda item: (item[0], item[1]))
-    return [(label, files) for _key, label, files in ordered]
-
-
-def _range_key(path: Path) -> tuple:
-    try:
-        document = pymupdf.open(path)
-        try:
-            first = document[0].get_text("text") if document.page_count else ""
-        finally:
-            document.close()
-    except Exception:
-        return ("9999-12-31", "9999-12-31", path.name)
-    match = TITLE_RANGE.search(first)
-    if not match:
-        return ("9999-12-31", "9999-12-31", path.name)
-    return (parse_date(match.group(1), "MDY") or "9999-12-31", parse_date(match.group(2), "MDY") or "9999-12-31", path.name)
+    pdfs, _rejected = collect_pdfs([folder])
+    return group_batches(pdfs)
 
 
 if __name__ == "__main__":

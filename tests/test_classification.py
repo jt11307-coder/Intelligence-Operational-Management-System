@@ -251,6 +251,18 @@ def test_located_after_a_missing_report_is_left_for_review():
     assert missing[0].evidence[1]["reason"] == "possible_contradiction"
 
 
+def test_approved_call_types_match_by_exact_name_only():
+    def categories(call_type):
+        return {item.category for item in classify(Classifiable(call_type=call_type), _rules())}
+
+    assert "directed_traffic_enforcement" in categories("TRAFFIC ENFORCEMENT")
+    assert "directed_traffic_enforcement" not in categories("Automated Traffic Enforcement")
+    assert {"hit_and_run", "injury_accident"} <= categories("Mv Acc,  Leaving Scene Injuries ")
+    assert "mental_health" in categories("psychological problem")
+    assert "fraud" in categories("FORGERY")
+    assert "disorderly_conduct" not in categories("DISTURB PEACE")
+
+
 def test_assault_lookbehind_guard_keeps_the_pattern_single_word():
     from wpd_compstat.classification.engine import _multi_word
     from wpd_compstat.classification.taxonomy import RULES

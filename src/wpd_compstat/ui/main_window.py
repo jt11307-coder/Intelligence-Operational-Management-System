@@ -9,6 +9,7 @@ from pathlib import Path
 from PySide6.QtCore import QDate, Qt, QTimer
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDateEdit,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
+    QProgressDialog,
     QPushButton,
     QSplitter,
     QStackedWidget,
@@ -46,6 +48,7 @@ from wpd_compstat.backup import create_backup, list_backups
 from wpd_compstat.classification.service import confirm_code
 from wpd_compstat.db.seed import get_setting
 from wpd_compstat.errors import AppError
+from wpd_compstat.import_engine.bulk import collect_pdfs, run_import, summary_text
 from wpd_compstat.import_engine.call_log import CALL_LOG_PROFILE
 from wpd_compstat.import_engine.pipeline import stage_commit, stage_extract, stage_select, stage_validate
 from wpd_compstat.quality import quality_summary
@@ -53,6 +56,7 @@ from wpd_compstat.reporting.charts import write_daily_chart
 from wpd_compstat.reporting import export_csv, export_pdf, export_pptx, export_xlsx
 from wpd_compstat.reporting.packet import build_compstat_packet
 from wpd_compstat.search import incident_detail, search_incidents
+from wpd_compstat.ui.drop_import import DropBox
 from wpd_compstat.ui.theme import DARK, LIGHT
 
 NAV = (
@@ -202,6 +206,8 @@ class MainWindow(QMainWindow):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.addWidget(QLabel("Executive Dashboard"))
+        page.drop_box = DropBox(self._import_dropped)
+        layout.addWidget(page.drop_box)
         banner = QLabel(
             "No call-log incidents have been imported. Official COMPSTAT figures are not estimates."
         )
@@ -533,6 +539,8 @@ class MainWindow(QMainWindow):
         note.setObjectName("banner")
         note.setWordWrap(True)
         layout.addWidget(note)
+        page.drop_box = DropBox(self._import_dropped)
+        layout.addWidget(page.drop_box)
         page.files = []
         page.list_label = QLabel("No files selected.")
         page.list_label.setWordWrap(True)
@@ -571,6 +579,41 @@ class MainWindow(QMainWindow):
         validated = stage_validate(self.session, batch_id)
         committed = stage_commit(self.session, batch_id)
         page.output.setPlainText(json.dumps({"extract": extracted, "validate": validated, "commit": committed}, indent=2))
+
+    def _import_dropped(self, paths: list[str]) -> dict | None:
+        pdfs, rejected = collect_pdfs(paths)
+        if not pdfs:
+            QMessageBox.warning(
+                self,
+                "WPD COMPSTAT",
+                "Only PDF files can be imported. Nothing was imported.\n\nNot PDFs: " + (", ".join(rejected) or "none"),
+            )
+            return None
+        dialog = QProgressDialog("Starting the import...", "", 0, 1, self)
+        dialog.setWindowTitle("Importing CAD PDFs")
+        dialog.setCancelButton(None)
+        dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        dialog.setMinimumDuration(0)
+        dialog.show()
+
+        def progress(text: str, done: int, total: int) -> None:
+            dialog.setMaximum(max(total, 1))
+            dialog.setValue(done)
+            dialog.setLabelText(text)
+            QApplication.processEvents()
+
+        try:
+            totals = run_import(self.session, pdfs, progress)
+        except AppError as exc:
+            QMessageBox.warning(self, "WPD COMPSTAT", f"The import stopped and that batch was rolled back.\n\n{exc}")
+            return None
+        finally:
+            dialog.close()
+        text = summary_text(totals, rejected)
+        self._pages["import"].output.setPlainText(text)
+        self._guard(lambda: self._fill_dashboard(self._pages["dashboard"]))
+        QMessageBox.information(self, "Import finished", text)
+        return totals
 
     def _quality(self) -> QWidget:
         page = self._text_page("Data quality", "Corrections keep the prior value in the field history.")

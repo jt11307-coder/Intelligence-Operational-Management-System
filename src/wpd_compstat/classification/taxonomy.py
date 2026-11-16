@@ -14,6 +14,7 @@ from __future__ import annotations
 #   override_conflict_regex  text pointing the other way; a contradiction plus this is left for review
 #   override_uncertain_regex softer hints that are left for review, never applied automatically
 #   call_exclude_phrases     call types containing these never match the rule's call phrases
+#   call_types               exact CAD call-type names (case and spacing ignored) mapped to the rule
 MISSING_CONTRADICTIONS = [
     r"\bnot (?:actually |really )?missing\b",
     r"\bisn'?t missing\b",
@@ -752,6 +753,30 @@ RULES: list[dict] = [
         "contradiction_regex": [],
     },
 ]
+
+# High-confidence rows of the call-type mapping review, approved by Joel Thomas on 2026-11-16.
+# Medium, Low, and needs-Joel rows are still pending and must not be added here without his approval.
+# Approved rows that proposed no category (46) stay uncategorized and need no entry.
+APPROVED_CALL_TYPES_ON = "2026-11-16"
+APPROVED_CALL_TYPES: dict[str, list[str]] = {
+    "directed_traffic_enforcement": ["TRAFFIC ENFORCEMENT"],
+    "property_damage_accident": ["MV ACC, NO INJURY IN PROG", "MV ACC, NO INJURY"],
+    "hit_and_run": ["MV ACC, LEAVING SCENE", "MV ACC, LEAVING SCENE IN PROG", "Mv Acc, Leaving Scene Injuries"],
+    "injury_accident": [
+        "MV ACC, WITH INJURIES",
+        "Mv Acc, Parking Lot,w/Injuries",
+        "Mv Acc, Leaving Scene Injuries",
+        "MV ACC, Inv. City Veh.w/Injury",
+    ],
+    "mental_health": ["PSYCHOLOGICAL PROB IN PROGRESS", "SUICIDE ATTEMPT IN PROGRESS", "PSYCHOLOGICAL PROBLEM"],
+    "road_hazard": ["POT HOLE"],
+    "city_vehicle_damage": ["MV ACC,Involving City Vehicle", "MV ACC, Inv. City Veh.w/Injury"],
+    "drug_offense": ["DRUG VIOLATION", "DRUG VIOLATION IN PROGRESS"],
+    "weapons_offense": ["WEAPON POSSESSION IN PROGRESS", "WEAPON POSSESSION"],
+    "fraud": ["FORGERY"],
+}
+for _rule in RULES:
+    _rule["call_types"] = APPROVED_CALL_TYPES.get(_rule["category"], [])
 
 # Repeat-offender linkage is manual. There is intentionally no rule for it.
 MANUAL_ONLY_CATEGORIES = ("repeat_offender_related",)

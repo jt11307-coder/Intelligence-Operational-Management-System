@@ -89,6 +89,10 @@ def _phrase_in(text: str | None, phrase: str) -> bool:
     return re.search(pattern, text.casefold()) is not None
 
 
+def _call_type_key(text: str | None) -> str:
+    return " ".join((text or "").casefold().split())
+
+
 def _negated(sentence: str, start: int, end: int) -> bool:
     window = sentence[max(0, start - 80) : start]
     if NEGATION.search(window):
@@ -243,6 +247,7 @@ def classify_rules(record: Classifiable, rules: list[dict]) -> list[Proposal]:
     )
     by_category = {rule["category"]: rule for rule in rules}
     dispatched = _excerpt(record.call_type or record.call_classification or "")
+    call_type_key = _call_type_key(record.call_type)
     for rule in rules:
         if rule.get("enabled", True) is False:
             continue
@@ -251,6 +256,8 @@ def classify_rules(record: Classifiable, rules: list[dict]) -> list[Proposal]:
         structured_hit = any(_phrase_in(structured_text, phrase) for phrase in rule.get("call_phrases") or [])
         if structured_hit and _excluded_call_type(rule, structured_text):
             structured_hit = False
+        if not structured_hit and call_type_key:
+            structured_hit = any(_call_type_key(name) == call_type_key for name in rule.get("call_types") or [])
         if structured_hit:
             check = check_narrative(rule, record.narratives)
             if check is not None and check.outcome == "override":
