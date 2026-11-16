@@ -6,6 +6,7 @@ import json
 from collections.abc import Callable
 from datetime import datetime, timezone
 
+from wpd_compstat.classification.call_reasons import seed_call_reasons
 from wpd_compstat.classification.taxonomy import RULES
 from wpd_compstat.constants import (
     AGENCY_CODES,
@@ -108,6 +109,7 @@ def seed(conn, now: str | None = None) -> None:
             """,
             (rule["rule_key"], rule["category"], json.dumps(rule), stamp),
         )
+    seed_call_reasons(conn, stamp)
     for profile in (GENERIC_PROFILE, CALL_LOG_PROFILE):
         conn.execute(
             """

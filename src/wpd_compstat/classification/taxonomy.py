@@ -757,6 +757,7 @@ RULES: list[dict] = [
 # High-confidence rows of the call-type mapping review, approved by Joel Thomas on 2026-11-16.
 # Medium, Low, and needs-Joel rows are still pending and must not be added here without his approval.
 # Approved rows that proposed no category (46) stay uncategorized and need no entry.
+# An official "In Progress" call reason maps with its approved base type (FORP with FOR).
 APPROVED_CALL_TYPES_ON = "2026-11-16"
 APPROVED_CALL_TYPES: dict[str, list[str]] = {
     "directed_traffic_enforcement": ["TRAFFIC ENFORCEMENT"],
@@ -773,7 +774,7 @@ APPROVED_CALL_TYPES: dict[str, list[str]] = {
     "city_vehicle_damage": ["MV ACC,Involving City Vehicle", "MV ACC, Inv. City Veh.w/Injury"],
     "drug_offense": ["DRUG VIOLATION", "DRUG VIOLATION IN PROGRESS"],
     "weapons_offense": ["WEAPON POSSESSION IN PROGRESS", "WEAPON POSSESSION"],
-    "fraud": ["FORGERY"],
+    "fraud": ["FORGERY", "Forgery In Progress"],
 }
 for _rule in RULES:
     _rule["call_types"] = APPROVED_CALL_TYPES.get(_rule["category"], [])

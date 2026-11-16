@@ -259,7 +259,7 @@ def test_approved_call_types_match_by_exact_name_only():
     assert "directed_traffic_enforcement" not in categories("Automated Traffic Enforcement")
     assert {"hit_and_run", "injury_accident"} <= categories("Mv Acc,  Leaving Scene Injuries ")
     assert "mental_health" in categories("psychological problem")
-    assert "fraud" in categories("FORGERY")
+    assert "fraud" in categories("FORGERY") and "fraud" in categories("FORGERY IN PROGRESS")
     assert "disorderly_conduct" not in categories("DISTURB PEACE")
 
 

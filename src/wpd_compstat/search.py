@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 
+from wpd_compstat.classification.call_reasons import official_code
 from wpd_compstat.errors import ValidationError
 from wpd_compstat.security.crypto import decrypt_field
 from wpd_compstat.security.permissions import has_permission
@@ -133,6 +134,7 @@ def incident_detail(session, incident_id: int, *, redact_persons: bool = False) 
         "arrival_time": row["arrival_time"],
         "clear_time": row["clear_time"],
         "call_type": row["call_type"],
+        "call_reason_code": official_code(row["call_type"]),
         "call_classification": row["call_classification"],
         "call_source": row["call_source"],
         "priority": row["priority"],
