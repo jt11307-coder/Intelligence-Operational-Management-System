@@ -110,6 +110,14 @@ def _compile(patterns: list[str]) -> list[re.Pattern[str]]:
     return compiled
 
 
+_LOOKAROUND = re.compile(r"\(\?<?[!=][^()]*\)")
+
+
+def _multi_word(pattern: re.Pattern[str]) -> bool:
+    """Lookaround guards such as (?<!sex ) do not make a single-word pattern a phrase."""
+    return bool(re.search(r"\s", _LOOKAROUND.sub("", pattern.pattern)))
+
+
 def _narrative_polarity(sentence: str, match: re.Match[str], multi_word: bool) -> str:
     if _negated(sentence, match.start(), match.end()):
         return "negated"
@@ -188,7 +196,7 @@ def check_narrative(rule: dict, narratives: list[str]) -> NarrativeCheck | None:
             for sentence in _sentences(text):
                 for pattern in _compile(rule.get("narrative_regex") or []):
                     match = pattern.search(sentence)
-                    if match and _narrative_polarity(sentence, match, bool(re.search(r"\s", pattern.pattern))) == "occurred":
+                    if match and _narrative_polarity(sentence, match, _multi_word(pattern)) == "occurred":
                         affirm = (sentence, match)
                         break
                 if affirm:
@@ -335,8 +343,7 @@ def classify_rules(record: Classifiable, rules: list[dict]) -> list[Proposal]:
                         match = pattern.search(sentence)
                         if not match:
                             continue
-                        multi_word = bool(re.search(r"\s", pattern.pattern))
-                        polarity = _narrative_polarity(sentence, match, multi_word)
+                        polarity = _narrative_polarity(sentence, match, _multi_word(pattern))
                         chosen = (sentence, polarity, match)
                         break
                     if chosen:

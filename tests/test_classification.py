@@ -1,5 +1,7 @@
 """Classification behavior that must not turn keywords into events."""
 
+import re
+
 from wpd_compstat.classification.codes import scan_codes, validate_match_rules
 from wpd_compstat.classification.engine import Classifiable, classify
 from wpd_compstat.classification.taxonomy import RULES
@@ -247,3 +249,11 @@ def test_located_after_a_missing_report_is_left_for_review():
     missing = [item for item in proposals if item.category == "missing_person"]
     assert missing and not missing[0].counts_officially
     assert missing[0].evidence[1]["reason"] == "possible_contradiction"
+
+
+def test_assault_lookbehind_guard_keeps_the_pattern_single_word():
+    from wpd_compstat.classification.engine import _multi_word
+    from wpd_compstat.classification.taxonomy import RULES
+
+    assault = next(rule for rule in RULES if rule["rule_key"] == "assault")
+    assert not _multi_word(re.compile(assault["narrative_regex"][0]))
