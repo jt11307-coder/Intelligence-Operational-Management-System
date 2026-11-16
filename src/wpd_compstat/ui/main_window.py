@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressDialog,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QStackedWidget,
     QTableWidget,
@@ -35,8 +36,11 @@ from PySide6.QtWidgets import (
 )
 
 from wpd_compstat.admin import confirm_profile, confirm_shifts, confirm_source_lists
-from wpd_compstat.analysis import dashboard_metrics
+from wpd_compstat.analysis import significant_incidents
 from wpd_compstat.analysis.compare import compare_calls
+from wpd_compstat.analysis.dashboard import AWAITING_TEXT, compstat_table, top_call_types
+from wpd_compstat.analysis.dashboard import tiles as dashboard_tiles
+from wpd_compstat.analysis.trends import developing_patterns
 from wpd_compstat.analysis.divisions import division_report
 from wpd_compstat.analysis.geo import hotspot_bins, location_points, repeat_streets
 from wpd_compstat.analysis.patterns import detect_patterns
@@ -47,7 +51,7 @@ from wpd_compstat.assignments import create_assignment, create_cycle, overdue_as
 from wpd_compstat.backup import create_backup, list_backups
 from wpd_compstat.classification.service import confirm_code
 from wpd_compstat.db.seed import get_setting
-from wpd_compstat.errors import AppError
+from wpd_compstat.errors import AppError, sanitized_traceback
 from wpd_compstat.import_engine.bulk import collect_pdfs, run_import, summary_text
 from wpd_compstat.import_engine.call_log import CALL_LOG_PROFILE
 from wpd_compstat.import_engine.pipeline import stage_commit, stage_extract, stage_select, stage_validate
@@ -149,15 +153,16 @@ class MainWindow(QMainWindow):
 
     def show_page(self, key: str) -> None:
         page = self._pages[key]
+        label = next(text for text, name in NAV if name == key)
         self.stack.setCurrentWidget(page)
         for name, button in self._nav_buttons.items():
             button.setChecked(name == key)
         refresh = getattr(page, "refresh_page", None)
         if refresh:
-            try:
-                refresh()
-            except AppError as exc:
-                QMessageBox.warning(self, "WPD COMPSTAT", str(exc))
+            self.statusBar().showMessage(f"Loading {label}...")
+            QApplication.processEvents()
+            self._guard(refresh)
+        self.statusBar().showMessage(f"Showing {label}. Offline. Official figures use imported records only.")
 
     def _check_idle(self) -> None:
         try:
@@ -201,69 +206,184 @@ class MainWindow(QMainWindow):
             func()
         except AppError as exc:
             QMessageBox.warning(self, "WPD COMPSTAT", str(exc))
+        except Exception as exc:
+            self.session.logger.error("Unexpected error: %s", sanitized_traceback(exc))
+            QMessageBox.warning(
+                self,
+                "WPD COMPSTAT",
+                "Something went wrong on this page, so it may be incomplete. "
+                "The technical details (no call details) were written to Logs\\application.log.",
+            )
 
     def _dashboard(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.addWidget(QLabel("Executive Dashboard"))
-        page.drop_box = DropBox(self._import_dropped)
-        layout.addWidget(page.drop_box)
-        banner = QLabel(
-            "No call-log incidents have been imported. Official COMPSTAT figures are not estimates."
-        )
+        outer = QWidget()
+        outer_layout = QVBoxLayout(outer)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        outer_layout.addWidget(scroll)
+        page = outer
+        body = QWidget()
+        scroll.setWidget(body)
+        layout = QVBoxLayout(body)
+        layout.addWidget(_page_title("Executive Dashboard"))
+        banner = QLabel("No call-log incidents have been imported. Official COMPSTAT figures are not estimates.")
         banner.setObjectName("banner")
         banner.setWordWrap(True)
         page.banner = banner
         layout.addWidget(banner)
+        top = QHBoxLayout()
         period = _period_bar()
         page.period = period
-        layout.addWidget(period)
-        grid = QGridLayout()
-        page.grid = grid
-        layout.addLayout(grid)
-        page.table = _table(["Comparison", "Current", "Baseline", "Absolute change", "Percent"])
-        layout.addWidget(page.table)
+        top.addWidget(period, 1)
         button = QPushButton("Refresh")
         button.clicked.connect(lambda: self._guard(lambda: self._fill_dashboard(page)))
-        layout.addWidget(button)
+        top.addWidget(button)
+        layout.addLayout(top)
+        page.period_note = QLabel()
+        page.period_note.setObjectName("banner")
+        page.period_note.setWordWrap(True)
+        layout.addWidget(page.period_note)
 
-        def refresh_page() -> None:
-            self._fill_dashboard(page)
+        page.compstat_section = _section("COMPSTAT summary")
+        layout.addWidget(page.compstat_section)
+        page.compstat = _table(["Category", "This week", "Last week", "4-week average", "Change vs last week", "Year to date", "Flag", "Status"])
+        layout.addWidget(page.compstat)
 
-        page.refresh_page = refresh_page
+        page.patterns_section = _section(
+            "Developing patterns",
+            "Rule-based flags, not findings. Each line is one flag with its count. Addresses and call details stay in Crime Analysis.",
+        )
+        layout.addWidget(page.patterns_section)
+        page.patterns = QLabel()
+        page.patterns.setWordWrap(True)
+        page.patterns.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addWidget(page.patterns)
+
+        page.tiles_section = _section("This period at a glance")
+        layout.addWidget(page.tiles_section)
+        page.grid = QGridLayout()
+        layout.addLayout(page.grid)
+
+        page.types_section = _section("Top call types this period")
+        layout.addWidget(page.types_section)
+        page.types = _table(["Call type (IMC name)", "IMC code", "Calls", "Previous equal period", "Change"])
+        layout.addWidget(page.types)
+
+        page.compare_section = _section(
+            "How this period compares",
+            "Every comparison period has the same number of days as this period. A percentage is shown only when the "
+            "comparison period has enough calls.",
+        )
+        layout.addWidget(page.compare_section)
+        page.table = _table(["Comparison", "What it compares", "This period", "Comparison period", "Change", "Percent"])
+        layout.addWidget(page.table)
+
+        layout.addWidget(_section("Add new CAD PDFs", "Drag the daily CAD call-log PDFs or a folder onto the box, or click it to choose files."))
+        page.drop_box = DropBox(self._import_dropped)
+        layout.addWidget(page.drop_box)
+        layout.addStretch(1)
+        page.refresh_page = lambda: self._fill_dashboard(page)
         return page
 
     def _fill_dashboard(self, page: QWidget) -> None:
-        start, end = page.period.iso()
-        count = self.session.conn.execute("SELECT COUNT(*) AS n FROM incidents").fetchone()["n"]
+        start_text, end_text = page.period.iso()
+        start, end = date.fromisoformat(start_text), date.fromisoformat(end_text)
+        conn = self.session.conn
+        count = conn.execute("SELECT COUNT(*) AS n FROM incidents").fetchone()["n"]
         page.banner.setVisible(count == 0)
+        result = dashboard_tiles(conn, start, end)
+        period = result["period"]
+        page.period_note.setText(period["note"] or "")
+        page.period_note.setVisible(bool(period["note"]))
+        days = period["days"]
+
+        table = compstat_table(conn, end)
+        week_start, week_end = table["week"]
+        average_start, average_end = table["average_weeks"]
+        page.compstat_section.explanation.setText(
+            f"This week means the 7 complete days {week_start} to {week_end}; last week is the 7 days before that. "
+            f"The 4-week average is the average week from {average_start} to {average_end}. Year to date runs from "
+            f"{table['ytd_start']} to {week_end}. Flag says UP or DOWN when this week is at least double, or at most half, "
+            f"the 4-week average and differs by at least {table['support']} calls (the Crime Analysis rule). "
+            f"Rows marked \"{AWAITING_TEXT}\" show proposed counts that are not official until you confirm the rule."
+        )
+        _fill(page.compstat, [
+            [
+                row["label"], row["this_week"], row["last_week"], _blank(row["four_week_average"]),
+                f"{row['change']:+d}", row["ytd"], row["flag"],
+                "Counted" if row["status"] == "counted" else AWAITING_TEXT,
+            ]
+            for row in table["rows"]
+        ])
+        _fit(page.compstat)
+
+        found = developing_patterns(conn, start, end)
+        lines = []
+        for title, key in (
+            ("Emerging day over day", "emerging"),
+            ("Volume flags (at least doubled versus the previous equal period)", "volume"),
+            ("Repeat calls at the same address", "repeat"),
+        ):
+            lines.append(title + ":")
+            lines.extend(f"  - {item['sentence']}" for item in found[key])
+            if not found[key]:
+                lines.append("  - None in this period.")
+        page.patterns.setText("\n".join(lines))
+
         while page.grid.count():
-            item = page.grid.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        metrics = dashboard_metrics(self.session.conn, start, end)
-        for index, metric in enumerate(metrics):
-            button = QPushButton(_metric_text(metric))
-            button.setEnabled(metric.available)
-            button.clicked.connect(lambda _checked=False, item=metric: self._show_incidents(item.label, item.incident_ids))
-            page.grid.addWidget(button, index // 3, index % 3)
-        rows = compare_calls(self.session.conn, date.fromisoformat(start), date.fromisoformat(end))
+            widget = page.grid.takeAt(0).widget()
+            if widget:
+                widget.hide()
+                widget.deleteLater()
+        page.tiles_section.explanation.setText(
+            f"Counts for {period['start']} to {period['end']} ({days} complete days). "
+            f"\"Previous\" is the {days} days just before. A call can appear in more than one box."
+        )
+        for index, tile in enumerate(result["tiles"]):
+            page.grid.addWidget(_tile_widget(tile, days), index // 3, index % 3)
+
+        types = top_call_types(conn, start, end)
+        page.types_section.explanation.setText(
+            f"The most frequent call types in these {days} days, using the official IMC name when the call type is on the "
+            f"IMC list. Previous equal period is the {days} days just before."
+        )
+        _fill(page.types, [
+            [
+                row["name"] + ("" if row["on_imc_list"] else " (not on the IMC list)"),
+                row["code"] or "",
+                row["count"],
+                _blank(row["previous"]),
+                "" if row["change"] is None else f"{row['change']:+d}",
+            ]
+            for row in types
+        ])
+        _fit(page.types)
+
+        rows = compare_calls(conn, start, end)
         _fill(page.table, [
             [
                 row["label"],
-                _blank(row["current"]),
+                row["description"],
+                row["current"],
                 _blank(row["baseline"]),
                 _blank(row["absolute_change"]),
-                _blank(row["percent"]) if row["comparable"] else "Not shown",
+                f"{row['percent']:+.1f}%" if row["comparable"] else (row["reason"] or "Not shown"),
             ]
             for row in rows
         ])
+        _fit(page.table)
 
     def _briefing(self) -> QWidget:
-        page = self._text_page("Daily briefing", "Generate a briefing from imported records.")
+        page = self._text_page(
+            "Daily Briefing",
+            "A written briefing built from imported records for the dates you choose.",
+            "Choose the dates above, then press \"Generate briefing\". Each briefing is recorded in the report history.",
+        )
         button = QPushButton("Generate briefing")
         button.clicked.connect(lambda: self._guard(lambda: self._run_briefing(page)))
-        page.layout().addWidget(button)
+        page.actions.addWidget(button)
         return page
 
     def _run_briefing(self, page) -> None:
@@ -272,10 +392,14 @@ class MainWindow(QMainWindow):
         page.output.setPlainText(_packet_text(packet))
 
     def _compstat(self) -> QWidget:
-        page = self._text_page("COMPSTAT cycle", "Unresolved assignments carry forward. Completion is not effectiveness.")
+        page = self._text_page(
+            "COMPSTAT",
+            "Starts a 14-day COMPSTAT cycle. Unresolved assignments carry forward. Completion is not effectiveness.",
+            "Choose the start date above, then press \"Start 14-day cycle\".",
+        )
         button = QPushButton("Start 14-day cycle")
         button.clicked.connect(lambda: self._guard(lambda: self._start_cycle(page)))
-        page.layout().addWidget(button)
+        page.actions.addWidget(button)
         return page
 
     def _start_cycle(self, page) -> None:
@@ -291,13 +415,14 @@ class MainWindow(QMainWindow):
 
     def _analysis(self) -> QWidget:
         page = self._text_page(
-            "Crime analysis",
+            "Crime Analysis",
             "Every classifier category and every uploaded call type can flag when its count at least doubles and rises by at least 3. "
             "A repeat flag is the same call type at one address within 7 calendar days.",
+            "Choose the dates above, then press \"Run analysis\". It saves the flags it finds and can take several seconds.",
         )
         button = QPushButton("Run analysis")
         button.clicked.connect(lambda: self._guard(lambda: self._run_analysis(page)))
-        page.layout().addWidget(button)
+        page.actions.addWidget(button)
         page.chart = QLabel()
         page.layout().addWidget(page.chart)
         return page
@@ -324,12 +449,14 @@ class MainWindow(QMainWindow):
 
     def _traffic(self) -> QWidget:
         page = self._text_page(
-            "Traffic enforcement",
-            "Citation references are not verified violations. The weekly benchmark is configurable and defaults to 200.",
+            "Traffic Enforcement",
+            "Weekly verified violations from imported traffic exports. Citation references are not verified violations. "
+            "The weekly benchmark is configurable and defaults to 200.",
         )
         button = QPushButton("Show weekly verified totals")
         button.clicked.connect(lambda: self._guard(lambda: self._show_traffic(page)))
-        page.layout().addWidget(button)
+        page.actions.addWidget(button)
+        page.refresh_page = lambda: self._show_traffic(page)
         return page
 
     def _show_traffic(self, page) -> None:
@@ -337,7 +464,10 @@ class MainWindow(QMainWindow):
         goal = int(get_setting(self.session.conn, "violation_weekly_goal", 200))
         rows = weekly_verified_totals(self.session.conn, start, end, goal)
         if not rows:
-            page.output.setPlainText("No traffic-export rows fall in this period.")
+            page.output.setPlainText(
+                "No traffic-export rows fall in this period. Verified violations come only from a traffic export, "
+                "not from the CAD call-log PDFs."
+            )
             return
         page.output.setPlainText("\n".join(
             f"{row['week']}: verified {row['verified_violations']} of {row['goal']}; "
@@ -346,43 +476,52 @@ class MainWindow(QMainWindow):
         ))
 
     def _crashes(self) -> QWidget:
-        page = self._text_page("Crash analysis", "Accident totals use officially counted classifications only.")
+        page = self._text_page("Crash Analysis", "Accident counts for the dates you choose, with accident report numbers.")
         button = QPushButton("Refresh")
         button.clicked.connect(lambda: self._guard(lambda: self._show_crashes(page)))
-        page.layout().addWidget(button)
+        page.actions.addWidget(button)
         page.refresh_page = lambda: self._show_crashes(page)
         return page
 
     def _show_crashes(self, page) -> None:
         start, end = page.period.iso()
-        metrics = {item.metric_id: item for item in dashboard_metrics(self.session.conn, start, end)}
-        page.output.setPlainText(
-            f"Accidents: {metrics['accidents'].value}.\n"
-            f"Injury accidents: {metrics['injury_accidents'].value}.\n"
-            "Unconfirmed starter rules are not included."
-        )
+        result = dashboard_tiles(self.session.conn, date.fromisoformat(start), date.fromisoformat(end))
+        wanted = {"accident_report", "accidents", "injury_accidents"}
+        lines = [result["period"]["note"]] if result["period"]["note"] else []
+        for tile in result["tiles"]:
+            if tile["key"] in wanted:
+                lines.append(f"{tile['label']}: {_tile_value(tile)}. {tile['description']}")
+        page.output.setPlainText("\n\n".join(lines) or "No calls are imported for these dates.")
 
     def _significant(self) -> QWidget:
-        page = self._text_page("Significant incidents", "Only officially counted significant-event categories are listed.")
-        button = QPushButton("Refresh")
-        button.clicked.connect(lambda: self._guard(lambda: self._show_significant(page)))
-        page.layout().addWidget(button)
+        page = self._text_page("Significant Incidents", "Only officially counted significant-event categories are listed.")
+        button = QPushButton("Show the list")
+        button.clicked.connect(lambda: self._guard(lambda: self._show_significant(page, open_list=True)))
+        page.actions.addWidget(button)
+        page.refresh_page = lambda: self._show_significant(page)
         return page
 
-    def _show_significant(self, page) -> None:
+    def _show_significant(self, page, open_list: bool = False) -> None:
         start, end = page.period.iso()
-        metric = next(item for item in dashboard_metrics(self.session.conn, start, end) if item.metric_id == "significant_incidents")
+        metric = significant_incidents(self.session.conn, start, end)
         if not metric.incident_ids:
-            page.output.setPlainText("No officially counted significant incidents in this period.")
+            page.output.setPlainText(
+                "No officially counted significant incidents in this period. Significant categories count only after "
+                "you confirm their rules or accept a classification."
+            )
             return
-        self._show_incidents(metric.label, metric.incident_ids)
-        page.output.setPlainText(f"Significant incidents: {metric.value}.")
+        page.output.setPlainText(f"Significant incidents: {metric.value}. Press \"Show the list\" to open them.")
+        if open_list:
+            self._show_incidents(metric.label, metric.incident_ids)
 
     def _geo(self) -> QWidget:
-        page = self._text_page("Geographic intelligence", "No address is sent to a mapping service.")
+        page = self._text_page(
+            "Geographic Intelligence", "Streets with the most calls in the dates you choose. No address is sent to a mapping service."
+        )
         button = QPushButton("Refresh locations")
         button.clicked.connect(lambda: self._guard(lambda: self._show_geo(page)))
-        page.layout().addWidget(button)
+        page.actions.addWidget(button)
+        page.refresh_page = lambda: self._show_geo(page)
         return page
 
     def _show_geo(self, page) -> None:
@@ -398,18 +537,19 @@ class MainWindow(QMainWindow):
         )
 
     def _divisions(self) -> QWidget:
-        page = self._text_page("Division performance", "Totals are workload, not a performance finding.")
+        page = self._text_page("Division Performance", "Workload for one unit in the dates you choose. Totals are workload, not a performance finding.")
         page.division = QComboBox()
-        page.layout().insertWidget(2, page.division)
+        page.actions.addWidget(page.division, 1)
         button = QPushButton("Refresh")
         button.clicked.connect(lambda: self._guard(lambda: self._show_division(page)))
-        page.layout().addWidget(button)
+        page.actions.addWidget(button)
 
         def refresh_page() -> None:
             page.division.clear()
             for row in self.session.conn.execute("SELECT id, name, confirmed FROM divisions ORDER BY name"):
                 suffix = "" if row["confirmed"] else " (unconfirmed)"
                 page.division.addItem(row["name"] + suffix, row["id"])
+            self._show_division(page)
 
         page.refresh_page = refresh_page
         return page
@@ -435,7 +575,7 @@ class MainWindow(QMainWindow):
     def _assignments(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.addWidget(QLabel("Operational assignments"))
+        layout.addWidget(_page_title("Operational Assignments"))
         form = QFormLayout()
         page.title = QLineEdit()
         page.description = QLineEdit()
@@ -461,13 +601,15 @@ class MainWindow(QMainWindow):
         _fill(page.table, [[row["action_number"], row["title"], row["status"], row["due_date"] or ""] for row in rows])
 
     def _reports(self) -> QWidget:
-        page = self._text_page("Reports", "Exports include the generation time, period, and qualifications.")
-        row = QHBoxLayout()
+        page = self._text_page(
+            "Reports",
+            "Exports a COMPSTAT packet. Exports include the generation time, period, and qualifications.",
+            "Choose the dates above, then press PDF, Excel, CSV, or PowerPoint. The file is saved in the Reports folder.",
+        )
         for label, kind in (("PDF", "pdf"), ("Excel", "xlsx"), ("CSV", "csv"), ("PowerPoint", "pptx")):
             button = QPushButton(label)
             button.clicked.connect(lambda _checked=False, export_kind=kind, target=page: self._guard(lambda: self._export(target, export_kind)))
-            row.addWidget(button)
-        page.layout().addLayout(row)
+            page.actions.addWidget(button)
         return page
 
     def _export(self, page, kind: str) -> None:
@@ -490,7 +632,8 @@ class MainWindow(QMainWindow):
     def _search(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.addWidget(QLabel("Incident search"))
+        layout.addWidget(_page_title("Incident Search"))
+        layout.addWidget(QLabel("Type a CAD number, a street, or narrative words, then press Search. Double-click a result to open it."))
         form = QFormLayout()
         page.cad = QLineEdit()
         page.street = QLineEdit()
@@ -532,7 +675,7 @@ class MainWindow(QMainWindow):
     def _import(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.addWidget(QLabel("PDF import"))
+        layout.addWidget(_page_title("PDF Import"))
         note = QLabel(
             "Imports use the active agency-confirmed CAD profile. Without one, the PDF is stored and no incidents are guessed."
         )
@@ -556,6 +699,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(run)
         page.output = QTextEdit()
         page.output.setReadOnly(True)
+        page.output.setPlaceholderText("The counts from your last import appear here: new calls, updated calls, duplicates, and conflicts.")
         layout.addWidget(page.output)
         return page
 
@@ -616,10 +760,11 @@ class MainWindow(QMainWindow):
         return totals
 
     def _quality(self) -> QWidget:
-        page = self._text_page("Data quality", "Corrections keep the prior value in the field history.")
+        page = self._text_page("Data Quality", "Counts of records that need review. Corrections keep the prior value in the field history.")
+        page.period.hide()
         button = QPushButton("Refresh")
         button.clicked.connect(lambda: self._guard(lambda: self._show_quality(page)))
-        page.layout().addWidget(button)
+        page.actions.addWidget(button)
         page.refresh_page = lambda: self._show_quality(page)
         return page
 
@@ -632,19 +777,39 @@ class MainWindow(QMainWindow):
             "Administration",
             "Agency codes have no built-in meaning. Confirm a CAD profile only after checking it against a real export.",
         )
+        page.period.hide()
+        column = QVBoxLayout()
+        page.actions.addLayout(column, 1)
         call_log = QPushButton("Confirm the Warwick CAD call-log profile (Selective Search / Dispatch Log)")
         call_log.clicked.connect(lambda: self._guard(self._confirm_call_log_profile))
-        page.layout().addWidget(call_log)
+        column.addWidget(call_log)
         profile = QPushButton("Confirm the generic labeled profile")
         profile.clicked.connect(lambda: self._guard(self._confirm_generic_profile))
-        page.layout().addWidget(profile)
+        column.addWidget(profile)
         sources = QPushButton("Confirm starter call-source lists")
         sources.clicked.connect(lambda: self._guard(self._confirm_sources))
-        page.layout().addWidget(sources)
+        column.addWidget(sources)
         shifts = QPushButton("Confirm the placeholder shift hours")
         shifts.clicked.connect(lambda: self._guard(self._confirm_shifts))
-        page.layout().addWidget(shifts)
+        column.addWidget(shifts)
+        page.refresh_page = lambda: self._show_admin(page)
         return page
+
+    def _show_admin(self, page) -> None:
+        conn = self.session.conn
+        rules = conn.execute(
+            "SELECT confirmation, COUNT(*) AS n FROM classification_rules GROUP BY confirmation ORDER BY confirmation"
+        ).fetchall()
+        codes = conn.execute("SELECT code, status FROM agency_codes ORDER BY code").fetchall()
+        profile = get_setting(conn, "active_profile_id", None)
+        lines = [f"Active CAD profile: {profile or 'none confirmed'}."]
+        lines.append(
+            "Call-type rules: "
+            + (", ".join(f"{row['n']} {row['confirmation'].replace('_', ' ')}" for row in rules) or "none")
+            + ". Categories from unconfirmed rules show on the dashboard as \"awaiting your rule confirmation\"."
+        )
+        lines.append("Agency codes: " + (", ".join(f"{row['code']} ({row['status']})" for row in codes) or "none") + ".")
+        page.output.setPlainText("\n\n".join(lines))
 
     def _confirm_call_log_profile(self) -> None:
         answer = QMessageBox.question(
@@ -673,10 +838,11 @@ class MainWindow(QMainWindow):
         confirm_shifts(self.session, get_setting(self.session.conn, "shifts", []))
 
     def _health(self) -> QWidget:
-        page = self._text_page("System health", "Backups on this drive do not protect against loss of the drive.")
+        page = self._text_page("System Health", "Data-quality counts and the backup list. Backups on this drive do not protect against loss of the drive.")
+        page.period.hide()
         backup = QPushButton("Create backup")
         backup.clicked.connect(lambda: self._guard(lambda: self._backup(page)))
-        page.layout().addWidget(backup)
+        page.actions.addWidget(backup)
         page.refresh_page = lambda: self._show_health(page)
         return page
 
@@ -720,20 +886,43 @@ class MainWindow(QMainWindow):
         dialog.resize(760, 560)
         dialog.exec()
 
-    def _text_page(self, title: str, subtitle: str) -> QWidget:
+    def _text_page(self, title: str, subtitle: str, hint: str = "") -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.addWidget(QLabel(title))
+        layout.addWidget(_page_title(title))
         note = QLabel(subtitle)
         note.setWordWrap(True)
         layout.addWidget(note)
         period = _period_bar()
         page.period = period
         layout.addWidget(period)
+        page.actions = QHBoxLayout()
+        layout.addLayout(page.actions)
         page.output = QTextEdit()
         page.output.setReadOnly(True)
+        page.output.setPlaceholderText(hint)
         layout.addWidget(page.output)
         return page
+
+
+def _page_title(text: str) -> QLabel:
+    label = QLabel(text)
+    label.setObjectName("pageTitle")
+    return label
+
+
+def _section(text: str, explanation: str = "") -> QWidget:
+    widget = QWidget()
+    layout = QVBoxLayout(widget)
+    layout.setContentsMargins(0, 12, 0, 0)
+    heading = QLabel(text)
+    heading.setObjectName("sectionTitle")
+    layout.addWidget(heading)
+    widget.explanation = QLabel(explanation)
+    widget.explanation.setWordWrap(True)
+    widget.explanation.setObjectName("explanation")
+    layout.addWidget(widget.explanation)
+    return widget
 
 
 def _period_bar() -> QWidget:
@@ -775,10 +964,50 @@ def _fill(table: QTableWidget, rows: list[list]) -> None:
             table.setItem(row_index, column, QTableWidgetItem("" if value is None else str(value)))
 
 
-def _metric_text(metric) -> str:
-    if not metric.available:
-        return f"{metric.label}\nNot available"
-    return f"{metric.label}\n{metric.value}"
+def _tile_value(tile: dict) -> str:
+    if tile["status"] == "awaiting":
+        return f"{tile['value']} proposed ({AWAITING_TEXT.lower()})"
+    return str(tile["value"])
+
+
+def _tile_widget(tile: dict, days: int) -> QFrame:
+    frame = QFrame()
+    frame.setObjectName("tile")
+    frame.setProperty("awaiting", tile["status"] == "awaiting")
+    layout = QVBoxLayout(frame)
+    title = QLabel(tile["label"])
+    title.setObjectName("tileTitle")
+    layout.addWidget(title)
+    value = QLabel(str(tile["value"]))
+    value.setObjectName("tileValue")
+    layout.addWidget(value)
+    if tile["status"] == "awaiting":
+        status = QLabel(f"{AWAITING_TEXT}. This is the proposed count, not an official count.")
+        status.setObjectName("tileAwaiting")
+        status.setWordWrap(True)
+        layout.addWidget(status)
+    description = QLabel(tile["description"])
+    description.setWordWrap(True)
+    description.setObjectName("explanation")
+    layout.addWidget(description)
+    if tile.get("previous") is not None:
+        change = tile["value"] - tile["previous"]
+        layout.addWidget(QLabel(f"Previous {days} days: {tile['previous']} ({change:+d})"))
+    return frame
+
+
+def _fit(table: QTableWidget) -> None:
+    table.resizeColumnsToContents()
+    table.horizontalHeader().setStretchLastSection(True)
+    table.resizeRowsToContents()
+    height = (
+        table.horizontalHeader().sizeHint().height()
+        + table.verticalHeader().length()
+        + table.frameWidth() * 2
+        + table.horizontalScrollBar().sizeHint().height()
+    )
+    table.setMinimumHeight(min(height, 640))
+    table.setMaximumHeight(min(height, 640))
 
 
 def _blank(value) -> str:

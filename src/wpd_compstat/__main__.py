@@ -28,6 +28,18 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName("WPD COMPSTAT")
     session = Session(root)
     use_install_temp(session.paths)
+
+    def unexpected(exc_type, exc, tb) -> None:
+        from wpd_compstat.errors import sanitized_traceback
+
+        session.logger.error("Unexpected error: %s", sanitized_traceback(exc.with_traceback(tb)))
+        QMessageBox.warning(
+            None,
+            "WPD COMPSTAT",
+            "Something went wrong. The technical details (no call details) were written to Logs\\application.log.",
+        )
+
+    sys.excepthook = unexpected
     state = session.state()
     if state == "new":
         if not SetupDialog(session).exec():
